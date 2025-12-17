@@ -4,9 +4,8 @@ import os
 import tkinter as tk
 from tkinter import ttk, scrolledtext
 
-# New Modular Imports
-import lexical 
-import syntax
+
+
 
 class CompilerSimulatorGUI:
     def __init__(self, root):
@@ -144,7 +143,7 @@ class CompilerSimulatorGUI:
         self.regex_entry.insert(0, "(a|b)(a|b|0|1)*") # Default
         self.regex_entry.pack(side='left', padx=10)
         
-        self.create_rounded_button(regex_frame, text="Generate NFA/DFA", command=self.generate_automata, font=('Segoe UI', 10, 'bold'), height=30).pack(side='left', padx=10)
+        self.create_rounded_button(regex_frame, text="Generate NFA/DFA", command=self.run_analysis, font=('Segoe UI', 10, 'bold'), height=30).pack(side='left', padx=10)
 
         diagram_label = tk.Label(diagram_frame, text="NFA State Diagram", 
                                 font=('Segoe UI', 10), bg=self.colors['card_bg'], fg=self.colors['muted'])
@@ -156,17 +155,15 @@ class CompilerSimulatorGUI:
         canvas_container.pack(fill='x', padx=20, pady=(0, 15))
 
         self.nfa_canvas = tk.Canvas(canvas_container, height=200, bg=self.colors['card_bg'], highlightthickness=0)
-        self.nfa_canvas.pack(side='top', fill='both', expand=True)
-
-        # Scrollbars
-        nfa_scroll_x = ttk.Scrollbar(canvas_container, orient='horizontal', command=self.nfa_canvas.xview)
-        nfa_scroll_x.pack(side='bottom', fill='x')
         
+        # Scrollbars - Pack Y first to maximize height, then X
         nfa_scroll_y = ttk.Scrollbar(canvas_container, orient='vertical', command=self.nfa_canvas.yview)
         nfa_scroll_y.pack(side='right', fill='y')
         
+        nfa_scroll_x = ttk.Scrollbar(canvas_container, orient='horizontal', command=self.nfa_canvas.xview)
+        nfa_scroll_x.pack(side='bottom', fill='x')
+        
         self.nfa_canvas.configure(xscrollcommand=nfa_scroll_x.set, yscrollcommand=nfa_scroll_y.set)
-        # Repack canvas to take remaining space
         self.nfa_canvas.pack(side='left', fill='both', expand=True)
 
         # Steps text
@@ -202,12 +199,12 @@ class CompilerSimulatorGUI:
 
         self.dfa_canvas = tk.Canvas(canvas_container, height=200, bg=self.colors['card_bg'], highlightthickness=0)
         
-        # Scrollbars
-        dfa_scroll_x = ttk.Scrollbar(canvas_container, orient='horizontal', command=self.dfa_canvas.xview)
-        dfa_scroll_x.pack(side='bottom', fill='x')
-        
+        # Scrollbars - Pack Y first to maximize height, then X
         dfa_scroll_y = ttk.Scrollbar(canvas_container, orient='vertical', command=self.dfa_canvas.yview)
         dfa_scroll_y.pack(side='right', fill='y')
+        
+        dfa_scroll_x = ttk.Scrollbar(canvas_container, orient='horizontal', command=self.dfa_canvas.xview)
+        dfa_scroll_x.pack(side='bottom', fill='x')
         
         self.dfa_canvas.configure(xscrollcommand=dfa_scroll_x.set, yscrollcommand=dfa_scroll_y.set)
         self.dfa_canvas.pack(side='left', fill='both', expand=True)
@@ -688,72 +685,7 @@ class CompilerSimulatorGUI:
         for line in log_lines:
             self.log_text.insert(tk.END, line)
 
-    def generate_automata(self, sync=False):
-        """Generates NFA and DFA from the regex entry"""
-        regex = self.regex_entry.get().strip()
-        
-        # User-friendly corrections
-        if ',' in regex:
-            regex = regex.replace(',', '|') # Treat comma as OR
-            regex = regex.replace(' ', '')  # Remove spaces usually associated with lists
-        
-        if not sync: # If called manually, clear logs to show we are working
-            self.nfa_text.delete('1.0', tk.END)
-            self.dfa_text.delete('1.0', tk.END)
-       
-        self.nfa_text.insert(tk.END, f"\nGenerating Automata for Regex: {regex}\n")
-        self.nfa_text.insert(tk.END, "-"*40 + "\n")
-        self.nfa_text.see(tk.END)
-        
-        # Clear Canvases immediately to show activity
-        self.nfa_canvas.delete('all')
-        self.dfa_canvas.delete('all')
 
-
-        nfa = None
-        try:
-            nfa = lexical.regex_to_nfa(regex)
-            steps = nfa.get_steps()
-            
-            # Text Log
-            for step in steps:
-                self.nfa_text.insert(tk.END, f"{step['from']} --({step['label']})--> {step['to']}\n")
-                
-            # Update Diagram dynamically with explicit final state
-            nfa_finals = {nfa.accept.name}
-            self.draw_nfa_diagram(steps, nfa_finals)
-            self.nfa_text.insert(tk.END, "NFA Generated successfully.\n")
-            self.nfa_text.see(tk.END)
-            
-        except Exception as e:
-            self.nfa_text.insert(tk.END, f"Error building NFA: {str(e)}\n\n")
-            self.nfa_text.insert(tk.END, "Check your regex syntax. Supported: ( ) * | . (implicit)\n")
-            self.nfa_text.see(tk.END)
-            import traceback
-            traceback.print_exc()
-
-        # 3. DFA Conversion (Subset Construction)
-        self.dfa_text.insert(tk.END, f"\nGenerating DFA for Regex: {regex}\n")
-        self.dfa_text.insert(tk.END, "-"*40 + "\n")
-        self.dfa_text.see(tk.END)
-        
-        if nfa:
-            try:
-                dfa = lexical.nfa_to_dfa(nfa)
-                dfa_steps = dfa.get_steps()
-                
-                self.dfa_text.insert(tk.END, f"Start State: {dfa.start}\n")
-                self.dfa_text.insert(tk.END, f"Final States: {dfa.accept_states}\n\n")
-                
-                self.dfa_text.insert(tk.END, f"Transitions:\n")
-                for step in dfa_steps:
-                    self.dfa_text.insert(tk.END, f"State {step['from']} --({step['label']})--> State {step['to']}\n")
-                    
-                self.draw_dfa_diagram(dfa_steps, dfa.accept_states)
-            except Exception as e:
-                self.dfa_text.insert(tk.END, f"Error converting to DFA: {str(e)}\n")
-        else:
-             self.dfa_text.insert(tk.END, "Skipped DFA (NFA failed)\n")
 
 
 if __name__ == "__main__":
