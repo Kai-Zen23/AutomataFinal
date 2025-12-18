@@ -34,7 +34,7 @@ public:
     // Define regex rules for various token types
     vector<pair<string, regex>> rules = {
         {"NUMBER", regex(R"(^[0-9]+(\.[0-9]+)?)")},
-        {"LITERAL", regex(R"(^[a-zA-Z_][a-zA-Z0-9_]*)")},
+        {"INDENTIFIER", regex(R"(^[a-zA-Z_][a-zA-Z0-9_]*)")},
         {"LPAREN", regex(R"(^\()")},
         {"RPAREN", regex(R"(^\))")},
         {"LBRACE", regex(R"(^\{)")},
@@ -42,8 +42,11 @@ public:
         {"LBRACKET", regex(R"(^\[)")},
         {"RBRACKET", regex(R"(^\])")},
         {"ALTERNATION", regex(R"(^\|)")},
-        {"STAR", regex(R"(^\*)")},
         {"PLUS", regex(R"(^\+)")},
+        {"MINUS", regex(R"(^-)")},
+        {"MULTIPLY", regex(R"(^\*)")},
+        {"DIVIDE", regex(R"(^/)")},
+        {"ASSIGN", regex(R"(^=)")},
         {"COMMA", regex(R"(^,)")},
         {"WS", regex(R"(^\s+)")}};
 
@@ -175,6 +178,49 @@ public:
     allStates.clear();
     collectStates(start, visited);
   }
+
+  /**
+   * Renumbers states so that the start state is 0 and others follow BFS order.
+   * This ensures a clean, predictable diagram and output list.
+   */
+  void renumberStates() {
+    map<State *, int> newIds;
+    queue<State *> q;
+    int currentId = 0;
+
+    // Start with the start node
+    q.push(start);
+    newIds[start] = currentId++;
+
+    while (!q.empty()) {
+      State *curr = q.front();
+      q.pop();
+
+      // Assign ID if not already done (though for BFS we usually assign on
+      // push) Actually, for better ordering, we assign when we first see them.
+
+      // Sort transitions to ensure deterministic numbering for parallel edges
+      // processing if needed, but map iteration is sorted by key (symbol).
+
+      for (auto const &[sym, targets] : curr->transitions) {
+        for (State *next : targets) {
+          if (newIds.find(next) == newIds.end()) {
+            newIds[next] = currentId++;
+            q.push(next);
+          }
+        }
+      }
+    }
+
+    // Apply new IDs
+    // We also need to iterate over ALL states in case some are unreachable
+    // (though Thompson's construction usually produces connected graphs,
+    // disconnected parts might exist if we did optimizations, but here safe to
+    // just renumber reachable).
+    for (auto const &[state, id] : newIds) {
+      state->id = id;
+    }
+  }
 };
 int NFA::stateCounter = 0;
 
@@ -254,6 +300,8 @@ NFA *regexToNFA(string regexStr) {
       start->addTransition(sym, end);
       stack.push(new NFA(start, end));
     } else if (c == '.') { // Concat
+      if (stack.size() < 2)
+        return nullptr;
       NFA *n2 = stack.top();
       stack.pop();
       NFA *n1 = stack.top();
@@ -261,6 +309,8 @@ NFA *regexToNFA(string regexStr) {
       n1->accept->addTransition("", n2->start);
       stack.push(new NFA(n1->start, n2->accept));
     } else if (c == '|') { // Union
+      if (stack.size() < 2)
+        return nullptr;
       NFA *n2 = stack.top();
       stack.pop();
       NFA *n1 = stack.top();
@@ -273,6 +323,8 @@ NFA *regexToNFA(string regexStr) {
       n2->accept->addTransition("", end);
       stack.push(new NFA(start, end));
     } else if (c == '*') { // Kleene Star
+      if (stack.empty())
+        return nullptr;
       NFA *n1 = stack.top();
       stack.pop();
       State *start = NFA::newState();
@@ -282,13 +334,26 @@ NFA *regexToNFA(string regexStr) {
       n1->accept->addTransition("", n1->start);
       n1->accept->addTransition("", end);
       stack.push(new NFA(start, end));
+    } else if (c == '+') { // One or More (IMPLEMENTED now to handle typical
+                           // inputs gracefully)
+      if (stack.empty())
+        return nullptr;
+      NFA *n1 = stack.top();
+      stack.pop();
+      State *start = NFA::newState();
+      State *end = NFA::newState();
+      start->addTransition("", n1->start);
+      n1->accept->addTransition("", n1->start);
+      n1->accept->addTransition("", end);
+      stack.push(new NFA(start, end));
     }
   }
 
   if (!stack.empty()) {
     NFA *res = stack.top();
     res->accept->isFinal = true;
-    res->indexStates(); // Populate internal list of all states
+    res->renumberStates(); // <--- NEW CALL
+    res->indexStates();    // Populate internal list of all states
     return res;
   }
   return nullptr;
@@ -504,8 +569,8 @@ public:
           log("REJECT", "Unmatched ')' - Stack empty or no matching '('");
           return;
         }
-      } else if (t.type == "PLUS" || t.type == "MINUS" || t.type == "STAR" ||
-                 t.type == "DIVIDE") {
+      } else if (t.type == "PLUS" || t.type == "MINUS" ||
+                 t.type == "MULTIPLY" || t.type == "DIVIDE") {
         string opVal = t.value;
         while (!stack.empty() && stack.back() != "(" &&
                precedence(stack.back()) >= precedence(opVal)) {

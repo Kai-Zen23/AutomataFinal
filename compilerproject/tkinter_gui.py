@@ -133,17 +133,7 @@ class CompilerSimulatorGUI:
         diagram_frame = tk.Frame(frame, bg=self.colors['card_bg'], relief='solid', borderwidth=2)
         diagram_frame.pack(fill='x', padx=20, pady=(0, 15))
 
-        # Regex Control Frame (Inside Diagram Frame for context)
-        regex_frame = tk.Frame(diagram_frame, bg=self.colors['card_bg'])
-        regex_frame.pack(fill='x', padx=10, pady=(10, 0))
 
-        tk.Label(regex_frame, text="Regex Pattern:", font=self.header_font, bg=self.colors['card_bg'], fg=self.colors['text_fg']).pack(side='left', padx=5)
-        
-        self.regex_entry = tk.Entry(regex_frame, font=('Consolas', 11), bg=self.colors['bg_main'], fg=self.colors['text_fg'], insertbackground=self.colors['text_fg'], width=30)
-        self.regex_entry.insert(0, "(a|b)(a|b|0|1)*") # Default
-        self.regex_entry.pack(side='left', padx=10)
-        
-        self.create_rounded_button(regex_frame, text="Generate NFA/DFA", command=self.run_analysis, font=('Segoe UI', 10, 'bold'), height=30).pack(side='left', padx=10)
 
         diagram_label = tk.Label(diagram_frame, text="NFA State Diagram", 
                                 font=('Segoe UI', 10), bg=self.colors['card_bg'], fg=self.colors['muted'])
@@ -236,29 +226,47 @@ class CompilerSimulatorGUI:
                          pady=15, bg=self.colors['card_bg'], fg=self.colors['text_fg'], anchor='center', justify='center')
         self.result_label.pack(fill='x', padx=10)
         
-        # PDA info
-        info_frame = tk.Frame(frame, bg=self.colors['card_bg'], relief='solid', borderwidth=2)
-        info_frame.pack(fill='x', padx=20, pady=(0, 15))
+        # Visualization Section
+        viz_frame = tk.Frame(frame, bg=self.colors['card_bg'], relief='solid', borderwidth=2)
+        viz_frame.pack(fill='x', padx=20, pady=(0, 15))
+
+        # Header with Toggle
+        header_frame = tk.Frame(viz_frame, bg=self.colors['card_bg'])
+        header_frame.pack(fill='x', padx=10, pady=5)
         
-        info_title = tk.Label(info_frame, text="PDA Configuration:", 
-                             font=('Arial', 11, 'bold'), bg=self.colors['card_bg'], fg=self.colors['muted'])
-        info_title.pack(anchor='w', padx=15, pady=(10, 5))
+        tk.Label(header_frame, text="PDA Visualization", font=self.header_font, bg=self.colors['card_bg'], fg=self.colors['muted']).pack(side='left')
+
+        # Toggle Buttons
+        self.pda_view_mode = tk.StringVar(value="tree")
+        toggle_frame = tk.Frame(header_frame, bg=self.colors['card_bg'])
+        toggle_frame.pack(side='right')
         
-        info1 = tk.Label(info_frame, text="State: q0 (start) → q1 (processing) → qAccept/qReject", 
-                        font=('Arial', 10), bg=self.colors['card_bg'], fg=self.colors['text_fg'])
-        info1.pack(anchor='w', padx=15, pady=2)
+        style = ttk.Style()
+        style.configure('TRadiobutton', background=self.colors['card_bg'], foreground=self.colors['text_fg'], font=self.ui_font)
         
-        info2 = tk.Label(info_frame, text="Stack: Push '(' on '(', Pop on ')'", 
-                        font=('Arial', 10), bg=self.colors['card_bg'], fg=self.colors['text_fg'])
-        info2.pack(anchor='w', padx=15, pady=(2, 10))
+        ttk.Radiobutton(toggle_frame, text="Parse Tree", variable=self.pda_view_mode, value="tree", command=self.update_pda_view, style='TRadiobutton').pack(side='left', padx=5)
+        ttk.Radiobutton(toggle_frame, text="State Diagram", variable=self.pda_view_mode, value="diagram", command=self.update_pda_view, style='TRadiobutton').pack(side='left', padx=5)
         
+        pda_canvas_container = tk.Frame(viz_frame, bg=self.colors['card_bg'])
+        pda_canvas_container.pack(fill='x', padx=20, pady=(0, 15))
+        
+        self.pda_canvas = tk.Canvas(pda_canvas_container, height=250, bg=self.colors['card_bg'], highlightthickness=0)
+        
+        pda_scroll_y = ttk.Scrollbar(pda_canvas_container, orient='vertical', command=self.pda_canvas.yview)
+        pda_scroll_y.pack(side='right', fill='y')
+        pda_scroll_x = ttk.Scrollbar(pda_canvas_container, orient='horizontal', command=self.pda_canvas.xview)
+        pda_scroll_x.pack(side='bottom', fill='x')
+        
+        self.pda_canvas.configure(xscrollcommand=pda_scroll_x.set, yscrollcommand=pda_scroll_y.set)
+        self.pda_canvas.pack(side='left', fill='both', expand=True)
+
         # Steps
         steps_label = tk.Label(frame, text="PDA Execution Trace:", 
                               font=('Arial', 12, 'bold'), bg=self.colors['card_bg'], fg=self.colors['text_fg'])
         steps_label.pack(anchor='w', padx=20, pady=(10, 5))
         
         self.pda_text = scrolledtext.ScrolledText(frame, font=('Courier', 10), 
-                                                 height=15, wrap='word', bg=self.colors['card_bg'], fg=self.colors['text_fg'], insertbackground=self.colors['text_fg'])
+                                                 height=10, wrap='word', bg=self.colors['card_bg'], fg=self.colors['text_fg'], insertbackground=self.colors['text_fg'])
         self.pda_text.pack(fill='both', expand=True, padx=20, pady=(0, 20))
         
         return frame
@@ -438,7 +446,107 @@ class CompilerSimulatorGUI:
         x0, y0, x1, y1 = canvas.bbox("all") or (0,0,0,0)
         # Add some padding
         canvas.configure(scrollregion=(0, 0, x1 + 50, max(c_height, y1 + 50)))
+
+    def draw_pda_tree(self, root_node):
+        canvas = self.pda_canvas
+        canvas.delete('all')
+        
+        if not root_node: return
+
+        # 1. Assign Coordinates (Reingold-Tilford simplifed)
+        # Recursively determine width of each node
+        level_y_gap = 60
+        sibling_x_gap = 20
+        
+        def iter_width(node):
+            if not node['children']:
+                node['width'] = 40
+            else:
+                w = 0
+                for c in node['children']:
+                    w += iter_width(c)
+                node['width'] = max(40, w + (len(node['children'])-1)*sibling_x_gap)
+            return node['width']
+            
+        iter_width(root_node)
+        
+        # 2. Assign positions
+        node_positions = [] # (x, y, label)
+        edges = [] # (x1, y1, x2, y2)
+        
+        def assign_pos(node, x, y):
+            node_positions.append((x, y, node['label']))
+            
+            # center children under x
+            if node['children']:
+                total_w = node['width']
+                start_x = x - total_w / 2
+                current_x = start_x
+                
+                for c in node['children']:
+                    child_x = current_x + c['width']/2
+                    child_y = y + level_y_gap
+                    edges.append((x, y + 15, child_x, child_y - 15))
+                    assign_pos(c, child_x, child_y)
+                    current_x += c['width'] + sibling_x_gap
+
+        assign_pos(root_node, 400, 40) # Start centerish
+        
+        # 3. Draw
+        # Draw edges first
+        for (x1, y1, x2, y2) in edges:
+            canvas.create_line(x1, y1, x2, y2, fill='#555555', width=2)
+            
+        # Draw nodes
+        for (x, y, label) in node_positions:
+            r = 18
+            # Color coding
+            fill = '#2d2d2d'
+            outline = '#007acc'
+            text_col = '#ffffff'
+            
+            if label in ['+', '-', '*', '/', '=']:
+                fill = '#3c3c3c'
+                outline = '#ff9800' # Orange for ops
+            elif label.isdigit() or label.replace('.', '').isdigit():
+                fill = '#3c3c3c'
+                outline = '#4caf50' # Green for numbers
+                
+            canvas.create_oval(x-r, y-r, x+r, y+r, fill=fill, outline=outline, width=2)
+            canvas.create_text(x, y, text=label, fill=text_col, font=('Segoe UI', 9, 'bold'))
+            
+        # Scroll region
+        x0, y0, x1, y1 = canvas.bbox("all") or (0,0,0,0)
+        canvas.configure(scrollregion=(0, 0, x1 + 50, y1 + 50))
     
+    def update_pda_view(self):
+        """Switches between Tree and Diagram view for PDA"""
+        mode = self.pda_view_mode.get()
+        self.pda_canvas.delete('all')
+        
+        if mode == "tree":
+            if hasattr(self, 'last_pda_tree') and self.last_pda_tree:
+                self.draw_pda_tree(self.last_pda_tree)
+            else:
+                self.pda_canvas.create_text(400, 100, text="No Parse Tree Available", fill=self.colors['muted'], font=('Segoe UI', 12))
+        else:
+            self.draw_pda_diagram()
+
+    def draw_pda_diagram(self):
+        """Draws a static representation of the PDA logic"""
+        # Static PDA Structure representing the Shift-Reduce logic in compiler_engine.cpp
+        transitions = [
+            {'from': 'Start', 'to': 'Operand', 'label': 'number/id'},
+            {'from': 'Start', 'to': 'Start', 'label': "Push '('"},
+            {'from': 'Operand', 'to': 'Operator', 'label': '+, -, *, /'},
+            {'from': 'Operand', 'to': 'Operand', 'label': "Pop ')'"},
+            {'from': 'Operator', 'to': 'Operand', 'label': 'number/id'},
+            {'from': 'Operator', 'to': 'Start', 'label': "Push '('"},
+        ]
+        final_states = ['Operand'] # Ends on an operand/expression
+        
+        self.draw_dynamic_graph(self.pda_canvas, transitions, "PDA State Machine", final_states)
+
     def run_analysis(self):
         input_text = self.input_entry.get()
         
@@ -525,7 +633,7 @@ class CompilerSimulatorGUI:
     
     def create_example_menu(self, parent):
         # Create a Menubutton for examples
-        mb = tk.Menubutton(parent, text="▼ Load Example Input", 
+        mb = tk.Menubutton(parent, text="", 
                           bg=self.colors['panel_bg'], fg=self.colors['accent'],
                           font=('Segoe UI', 10), activebackground=self.colors['panel_bg'], activeforeground=self.colors['text_fg'],
                           relief='flat')
@@ -595,7 +703,8 @@ class CompilerSimulatorGUI:
         # C++ BACKEND INTEGRATION
         # -------------------------------------------------------------
         # Get Current Regex for Automata Generation
-        current_regex = self.regex_entry.get().strip()
+        # Combined Input: Use the main input text as the regex pattern
+        current_regex = input_text.strip()
         
         cpp_exe = "compiler_engine.exe"
         if os.path.exists(cpp_exe):
@@ -613,6 +722,11 @@ class CompilerSimulatorGUI:
                 dfa_transitions = []
                 dfa_final = []
                 
+                # Parse Tree Simulation Stack
+                # Store node objects: {'label': str, 'children': [node, node...]}
+                tree_stack = []
+                pda_final_tree = None
+
                 for line in output_lines:
                     # 1. Scanner Output
                     if "SCANNER: Found" in line:
@@ -651,24 +765,80 @@ class CompilerSimulatorGUI:
                         if len(parts) >= 4:
                             step_num = parts[0].replace("PDA_STEP:", "").strip()
                             action = parts[1].strip()
-                            stack = parts[2].strip()
+                            stack_content = parts[2].strip()
                             desc = parts[3].strip()
                             
                             self.pda_text.insert(tk.END, f"Step {step_num}:\n")
                             self.pda_text.insert(tk.END, f"  Action: {action}\n")
-                            self.pda_text.insert(tk.END, f"  Stack:  {stack}\n")
+                            self.pda_text.insert(tk.END, f"  Stack:  {stack_content}\n")
                             self.pda_text.insert(tk.END, f"  Desc:   {desc}\n")
                             self.pda_text.insert(tk.END, "-"*30 + "\n")
                             
+                            # --- TREE CONSTRUCTION LOGIC ---
+                            try:
+                                if action == "SHIFT":
+                                    # Read operand 3 -> Label "3"
+                                    label = desc.replace("Read operand", "").strip()
+                                    tree_stack.append({'label': label, 'children': []})
+                                elif action == "PUSH":
+                                    # Push operator + -> Label "+"
+                                    # Push '(' -> Label "("
+                                    label = desc.replace("Push operator", "").replace("Push", "").replace("'", "").strip()
+                                    tree_stack.append({'label': label, 'children': []})
+                                elif action == "POP/REDUCE":
+                                    # Apply T -> T * F
+                                    # format: Apply LHS -> RHS
+                                    if "->" in desc:
+                                        rule = desc.replace("Apply", "").strip()
+                                        lhs, rhs = rule.split("->")
+                                        lhs = lhs.strip()
+                                        rhs_parts = rhs.strip().split()
+                                        
+                                        # Pop N items from stack where N = len(rhs_parts)
+                                        # C++ logic might have minimal stack ops, so we heuristically pop
+                                        # based on the rule length.
+                                        children = []
+                                        count = len(rhs_parts)
+                                        if count > len(tree_stack): count = len(tree_stack) # Safety
+                                        
+                                        if count > 0:
+                                            children = tree_stack[-count:]
+                                            tree_stack = tree_stack[:-count]
+                                        
+                                        node = {'label': lhs, 'children': children}
+                                        tree_stack.append(node)
+                                        
+                                elif action == "POP" and "Match" in desc:
+                                    # Match '('
+                                    # This usually means we close a parenthesis group.
+                                    # Structure on stack might be: '(', 'E'
+                                    # We want to reduce this to 'F' or similar, but the log just says "Match '('".
+                                    # We'll pop the current top (expression) and the '(' below it.
+                                    if len(tree_stack) >= 2:
+                                        expr = tree_stack.pop()
+                                        lparen = tree_stack.pop()
+                                        # Synthesize a parent node (e.g. Factor)
+                                        node = {'label': 'F', 'children': [lparen, expr, {'label': ')', 'children': []}]}
+                                        tree_stack.append(node)
+                                    
+                            except Exception as e:
+                                print(f"Tree build error: {e}")
+                                
                             if action == "ACCEPT":
                                 self.result_label.config(text="✓ SYNTAX CORRECT", fg="#4caf50")
                                 log_lines.append("RESULT: Syntax Accepted.\n")
+                                if tree_stack:
+                                    pda_final_tree = tree_stack[0] # Root
                             elif action == "REJECT":
                                 self.result_label.config(text="✗ SYNTAX ERROR (REJECTED)", fg="#f44336")
                                 log_lines.append("RESULT: Syntax Rejected by PDA.\n")
 
                 if nfa_transitions: self.draw_nfa_diagram(nfa_transitions, nfa_final)
                 if dfa_transitions: self.draw_dfa_diagram(dfa_transitions, dfa_final)
+                
+                # Save tree for toggling
+                self.last_pda_tree = pda_final_tree
+                self.update_pda_view()
 
             except Exception as e:
                 log_lines.append(f"SYSTEM ERROR: Failed to run C++ engine: {e}\n")
