@@ -7,11 +7,29 @@ from tkinter import ttk, scrolledtext
 
 
 
+# ==============================================================================================
+# COMPILER SIMULATOR GUI (Python Frontend)
+# ==============================================================================================
+# This application serves as the visual front-end for the C++ Compiler Engine.
+# It allows users to:
+#   1. Input source code and regex patterns.
+#   2. Visualize Lexical Analysis (Tokens).
+#   3. View dynamically generated NFA and DFA state diagrams.
+#   4. Step through the Syntax Analysis (PDA) process.
+# ==============================================================================================
+
 class CompilerSimulatorGUI:
+    """
+    Main GUI Class for the Compiler Simulator.
+    Handles window creation, layout management, and interaction with the C++ backend.
+    """
     def __init__(self, root):
+        """
+        Initialize the application window and design themes.
+        """
         self.root = root
         self.root.title("Compiler Front-End Simulator")
-        self.root.geometry("1400x900")
+        self.root.geometry("1400x900")  # Large default size for better visibility
         # Color palette (black/white shades)
         self.colors = {
             'bg_main': '#1e1e1e',      # Darker background like VS Code
@@ -38,6 +56,9 @@ class CompilerSimulatorGUI:
         
     
     def create_widgets(self):
+        """
+        Sets up the entire UI layout, including the title bar, side panels, and content area.
+        """
         # Title
         title_frame = tk.Frame(self.root, bg=self.colors['panel_bg'], height=80)
         title_frame.pack(fill='x', padx=0, pady=0)
@@ -236,18 +257,11 @@ class CompilerSimulatorGUI:
         
         tk.Label(header_frame, text="PDA Visualization", font=self.header_font, bg=self.colors['card_bg'], fg=self.colors['muted']).pack(side='left')
 
-        # Toggle Buttons
-        # We use a StringVar to track the current mode ("tree" or "diagram")
-        self.pda_view_mode = tk.StringVar(value="tree")
         toggle_frame = tk.Frame(header_frame, bg=self.colors['card_bg'])
         toggle_frame.pack(side='right')
         
-        style = ttk.Style()
-        style.configure('TRadiobutton', background=self.colors['card_bg'], foreground=self.colors['text_fg'], font=self.ui_font)
-        
-        # Radio buttons allow the user to switch between the dynamic Parse Tree and the static State Diagram
-        ttk.Radiobutton(toggle_frame, text="Parse Tree", variable=self.pda_view_mode, value="tree", command=self.update_pda_view, style='TRadiobutton').pack(side='left', padx=5)
-        ttk.Radiobutton(toggle_frame, text="State Diagram", variable=self.pda_view_mode, value="diagram", command=self.update_pda_view, style='TRadiobutton').pack(side='left', padx=5)
+        # Parse Tree Header
+        tk.Label(toggle_frame, text="Parse Tree Visualization", font=self.ui_font, bg=self.colors['card_bg'], fg=self.colors['muted']).pack(side='right', padx=5)
         
         pda_canvas_container = tk.Frame(viz_frame, bg=self.colors['card_bg'])
         pda_canvas_container.pack(fill='x', padx=20, pady=(0, 15))
@@ -287,12 +301,17 @@ class CompilerSimulatorGUI:
         return frame
     
     def draw_nfa_diagram(self, transitions, final_states):
+        """Renders the NFA Graph using the custom layout engine."""
         self.draw_dynamic_graph(self.nfa_canvas, transitions, "NFA", final_states)
 
     def draw_dfa_diagram(self, transitions, final_states):
         self.draw_dynamic_graph(self.dfa_canvas, transitions, "DFA", final_states)
 
     def draw_dynamic_graph(self, canvas, transitions, title, final_states):
+        """
+        A custom graph layout engine (DAG-based) to visualize Automata.
+        It ranks nodes by depth (Topological-like sort) and minimizes edge crossing.
+        """
         canvas.delete('all')
         if not transitions:
             return
@@ -530,33 +549,7 @@ class CompilerSimulatorGUI:
         x0, y0, x1, y1 = canvas.bbox("all") or (0,0,0,0)
         canvas.configure(scrollregion=(0, 0, x1 + 50, y1 + 50))
     
-    def update_pda_view(self):
-        """
-        Switches between Tree and Diagram view for PDA.
-        Called whenever the radio button toggle changes or when a new analysis completes.
-        """
-        mode = self.pda_view_mode.get()
-        self.pda_canvas.delete('all')
-        
-        if mode == "tree":
-            # If we have a stored parse tree from the last run, draw it.
-            if hasattr(self, 'last_pda_tree') and self.last_pda_tree:
-                self.draw_pda_tree(self.last_pda_tree)
-            else:
-                self.pda_canvas.create_text(400, 100, text="No Parse Tree Available", fill=self.colors['muted'], font=('Segoe UI', 12))
-        else:
-            # Draw the static state diagram
-            self.draw_pda_diagram()
 
-    def draw_pda_diagram(self):
-        """
-        Draws the PDA logic using transitions parsed from the C++ backend.
-        """
-        if hasattr(self, 'pda_transitions') and self.pda_transitions:
-            self.draw_dynamic_graph(self.pda_canvas, self.pda_transitions, "PDA State Machine", self.pda_final_states)
-        else:
-            self.pda_canvas.delete('all')
-            self.pda_canvas.create_text(400, 100, text="No PDA Data Available", fill=self.colors['muted'], font=('Segoe UI', 12))
 
     def run_analysis(self):
         input_text = self.input_entry.get()
@@ -572,6 +565,13 @@ class CompilerSimulatorGUI:
             # if not os.path.exists(exe_path):
             #     self.compile_cpp(script_dir)
 
+            # ---------------------------------------------------------------------------------
+            # RUN C++ BACKEND
+            # ---------------------------------------------------------------------------------
+            # We execute the compiled C++ binary ('compiler_engine.exe') as a subprocess.
+            # The C++ engine takes the input string and performs all the heavy lifting:
+            # parsing regex, generating NFA/DFA, and running the PDA.
+            # ---------------------------------------------------------------------------------
             # Run the executable with input (use absolute path)
             # result = subprocess.run([exe_path], 
             #                       input=input_text, 
@@ -682,7 +682,10 @@ class CompilerSimulatorGUI:
         subprocess.run(['g++', '-o', 'compiler_engine', 'compiler_engine.cpp', '-std=c++11'], cwd=script_dir)
     
     def simulate_analysis(self, input_text):
-        """Perform real analysis using C++ Backend primarily"""
+        """
+        Perform the actual analysis by bridging with the C++ backend.
+        Captures stdout from the C++ program and parses it to update the GUI.
+        """
         import re
         
         # Clear all tabs
@@ -711,10 +714,9 @@ class CompilerSimulatorGUI:
         self.lexical_text.insert('1.0', grammar_info)
         
         # -------------------------------------------------------------
-        # C++ BACKEND INTEGRATION
+        # 1. PREPARE INPUT and CALL BACKEND
         # -------------------------------------------------------------
-        # Get Current Regex for Automata Generation
-        # Combined Input: Use the main input text as the regex pattern
+        # Use the input text as the regex pattern for this demo
         current_regex = input_text.strip()
         
         cpp_exe = "compiler_engine.exe"
@@ -738,9 +740,13 @@ class CompilerSimulatorGUI:
                 tree_stack = []
                 pda_final_tree = None
                 
-                # Dynamic PDA Graph Data
-                self.pda_transitions = []
-                self.pda_final_states = []
+
+                # -------------------------------------------------------------
+                # 2. PARSE OUTPUT
+                # -------------------------------------------------------------
+                # The C++ engine outputs specific markers (e.g., "NFA_EDGE:", "PDA_STEP:")
+                # which we intercept here to build the data structures for visualization.
+                # -------------------------------------------------------------
 
                 for line in output_lines:
                     # 1. Scanner Output
@@ -774,18 +780,7 @@ class CompilerSimulatorGUI:
                          dfa_final.append(state_id)
 
                     # 4. PDA Output
-                    elif "PDA_EDGE:" in line:
-                         # Format: PDA_EDGE: Start --(number/id)--> Operand
-                         m = re.search(r'(.*?)\s+--\((.*?)\)-->\s+(.*)', line.replace("PDA_EDGE:", "").strip())
-                         if m:
-                            u, label, v = m.groups()
-                            # Avoid duplicates if multiple runs output same structure
-                            if not any(t['from'] == u and t['to'] == v and t['label'] == label for t in self.pda_transitions):
-                                self.pda_transitions.append({'from': u, 'to': v, 'label': label})
-                    elif "PDA_FINAL:" in line:
-                         state_id = line.split(":")[1].strip()
-                         if state_id not in self.pda_final_states:
-                             self.pda_final_states.append(state_id)
+
 
                     elif "PDA_STEP:" in line:
                         # Format: PDA_STEP: 1 | ACTION | [stack] | desc
@@ -810,7 +805,13 @@ class CompilerSimulatorGUI:
                             try:
                                 if action == "SHIFT":
                                     # Read operand 3 -> Label "3"
-                                    label = desc.replace("Read operand", "").strip()
+                                    # Read variable x -> Label "x"
+                                    # Read function f -> Label "f"
+                                    label = desc
+                                    for prefix in ["Read operand", "Read variable", "Read function"]:
+                                        label = label.replace(prefix, "")
+                                    label = label.strip()
+                                    
                                     tree_stack.append({'label': label, 'children': []})
                                 elif action == "PUSH":
                                     # Push operator + -> Label "+"
@@ -868,9 +869,11 @@ class CompilerSimulatorGUI:
                 if nfa_transitions: self.draw_nfa_diagram(nfa_transitions, nfa_final)
                 if dfa_transitions: self.draw_dfa_diagram(dfa_transitions, dfa_final)
                 
-                # Save tree for toggling
-                self.last_pda_tree = pda_final_tree
-                self.update_pda_view()
+                if pda_final_tree:
+                    self.draw_pda_tree(pda_final_tree)
+                else:
+                    self.pda_canvas.delete('all')
+                    self.pda_canvas.create_text(400, 100, text="No Parse Tree Available", fill=self.colors['muted'], font=('Segoe UI', 12))
 
             except Exception as e:
                 log_lines.append(f"SYSTEM ERROR: Failed to run C++ engine: {e}\n")

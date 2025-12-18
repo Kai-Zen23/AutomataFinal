@@ -62,6 +62,8 @@ public:
           if (rule.first != "WS") { // Skip whitespace
             tokens.push_back({rule.first, val});
             // Standardized Output for Visualizer
+            // The GUI is listening for "SCANNER: Found" to populate the token
+            // list.
             cout << "SCANNER: Found " << rule.first << " '" << val << "'"
                  << endl;
           }
@@ -143,6 +145,8 @@ public:
       for (auto const &[sym, targets] : curr->transitions) {
         string label = (sym == "" ? "EPS" : sym);
         for (State *next : targets) {
+          // Output "NFA_EDGE" marker for the Python GUI to parse and draw the
+          // graph.
           cout << "NFA_EDGE: " << curr->id << " --(" << label << ")--> "
                << next->id << endl;
           if (visited.find(next->id) == visited.end()) {
@@ -497,6 +501,7 @@ void generateDFA(NFA *nfa) {
   // Print Edges
   for (auto const &[uID, trans] : dfaTransitions) {
     for (auto const &[sym, vID] : trans) {
+      // Output "DFA_EDGE" marker for the Python GUI.
       cout << "DFA_EDGE: " << uID << " --(" << sym << ")--> " << vID << endl;
     }
   }
@@ -550,9 +555,19 @@ public:
     stack.clear();
     log("START", "Initialize PDA");
 
-    for (const auto &t : tokens) {
+    for (size_t i = 0; i < tokens.size(); ++i) {
+      const auto &t = tokens[i];
+
       if (t.type == "NUMBER" || t.type == "LITERAL") {
         log("SHIFT", "Read operand " + t.value);
+      } else if (t.type == "INDENTIFIER") {
+        // Check for function call: id followed by '('
+        if (i + 1 < tokens.size() && tokens[i + 1].type == "LPAREN") {
+          log("SHIFT", "Read function " + t.value);
+          // The '(' will be handled in next iteration
+        } else {
+          log("SHIFT", "Read variable " + t.value);
+        }
       } else if (t.type == "LPAREN") {
         stack.push_back("(");
         log("PUSH", "Push '('");
@@ -563,12 +578,24 @@ public:
           log("POP/REDUCE", "Apply T -> T " + op + " F");
         }
         if (!stack.empty()) {
-          stack.pop_back();
-          log("POP", "Match '('");
+          stack.pop_back(); // Pop '('
+
+          // Check if this was a function call arg list ending
+          // Note: In a real PDA we'd track "Func" on stack.
+          // Here we just log the match.
+          log("POP", "Match ')'");
         } else {
-          log("REJECT", "Unmatched ')' - Stack empty or no matching '('");
+          log("REJECT", "Unmatched ')' - Stack empty");
           return;
         }
+      } else if (t.type == "COMMA") {
+        // Argument separator
+        while (!stack.empty() && stack.back() != "(") {
+          string op = stack.back();
+          stack.pop_back();
+          log("POP/REDUCE", "Apply T -> T " + op + " F");
+        }
+        log("SKIP", "Next Argument");
       } else if (t.type == "PLUS" || t.type == "MINUS" ||
                  t.type == "MULTIPLY" || t.type == "DIVIDE") {
         string opVal = t.value;
@@ -602,12 +629,19 @@ public:
   void printPDAStructure() {
     cout << "PDA_FINAL: Operand" << endl;
     // Edges format: PDA_EDGE: From --(Label)--> To
-    cout << "PDA_EDGE: Start --(number/id)--> Operand" << endl;
+    cout << "PDA_EDGE: Start --(number/variable)--> Operand" << endl;
     cout << "PDA_EDGE: Start --(Push '(')--> Start" << endl;
+    cout << "PDA_EDGE: Start --(func_name)--> Function" << endl;
+
+    cout << "PDA_EDGE: Function --(Push '(')--> Start" << endl;
+
     cout << "PDA_EDGE: Operand --(operator)--> Operator" << endl;
     cout << "PDA_EDGE: Operand --(Pop ')')--> Operand" << endl;
-    cout << "PDA_EDGE: Operator --(number/id)--> Operand" << endl;
+    cout << "PDA_EDGE: Operand --(Comma)--> Start" << endl;
+
+    cout << "PDA_EDGE: Operator --(number/variable)--> Operand" << endl;
     cout << "PDA_EDGE: Operator --(Push '(')--> Start" << endl;
+    cout << "PDA_EDGE: Operator --(func_name)--> Function" << endl;
   }
 };
 
@@ -630,6 +664,8 @@ public:
  * @return 0 on success, 1 on error.
  */
 int main(int argc, char *argv[]) {
+  // Demo Mode: If no args are provided, we could default or error.
+  // The GUI always provides args.
   if (argc < 2)
     return 1;
 
