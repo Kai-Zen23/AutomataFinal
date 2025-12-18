@@ -141,7 +141,7 @@ public:
       }
 
       for (auto const &[sym, targets] : curr->transitions) {
-        string label = (sym == "" ? "ε" : sym);
+        string label = (sym == "" ? "EPS" : sym);
         for (State *next : targets) {
           cout << "NFA_EDGE: " << curr->id << " --(" << label << ")--> "
                << next->id << endl;
@@ -594,6 +594,21 @@ public:
     }
     log("ACCEPT", "Input Accepted");
   }
+  /**
+   * Outputs the static structure of the PDA (State Machine View) for
+   * visualization. Since this is a Shift-Reduce parser, we visualize the
+   * abstract states.
+   */
+  void printPDAStructure() {
+    cout << "PDA_FINAL: Operand" << endl;
+    // Edges format: PDA_EDGE: From --(Label)--> To
+    cout << "PDA_EDGE: Start --(number/id)--> Operand" << endl;
+    cout << "PDA_EDGE: Start --(Push '(')--> Start" << endl;
+    cout << "PDA_EDGE: Operand --(operator)--> Operator" << endl;
+    cout << "PDA_EDGE: Operand --(Pop ')')--> Operand" << endl;
+    cout << "PDA_EDGE: Operator --(number/id)--> Operand" << endl;
+    cout << "PDA_EDGE: Operator --(Push '(')--> Start" << endl;
+  }
 };
 
 // ============================================================================
@@ -638,6 +653,7 @@ int main(int argc, char *argv[]) {
   // 3. Parse Input (PDA)
   cout << "=== PARSER START ===" << endl;
   Parser parser;
+  parser.printPDAStructure();
   parser.parse(tokens);
 
   return 0;

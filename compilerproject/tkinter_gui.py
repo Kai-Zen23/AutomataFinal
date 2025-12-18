@@ -237,6 +237,7 @@ class CompilerSimulatorGUI:
         tk.Label(header_frame, text="PDA Visualization", font=self.header_font, bg=self.colors['card_bg'], fg=self.colors['muted']).pack(side='left')
 
         # Toggle Buttons
+        # We use a StringVar to track the current mode ("tree" or "diagram")
         self.pda_view_mode = tk.StringVar(value="tree")
         toggle_frame = tk.Frame(header_frame, bg=self.colors['card_bg'])
         toggle_frame.pack(side='right')
@@ -244,6 +245,7 @@ class CompilerSimulatorGUI:
         style = ttk.Style()
         style.configure('TRadiobutton', background=self.colors['card_bg'], foreground=self.colors['text_fg'], font=self.ui_font)
         
+        # Radio buttons allow the user to switch between the dynamic Parse Tree and the static State Diagram
         ttk.Radiobutton(toggle_frame, text="Parse Tree", variable=self.pda_view_mode, value="tree", command=self.update_pda_view, style='TRadiobutton').pack(side='left', padx=5)
         ttk.Radiobutton(toggle_frame, text="State Diagram", variable=self.pda_view_mode, value="diagram", command=self.update_pda_view, style='TRadiobutton').pack(side='left', padx=5)
         
@@ -406,7 +408,16 @@ class CompilerSimulatorGUI:
                                      arrow='last', arrowshape=(10, 12, 4), fill=self.colors['muted'], width=1.5)
                     canvas.create_text(mid_x, mid_y+14, text=label, fill=self.colors['text_fg'], font=('Consolas', 9))
                 
-                # Forward Edge (Straight)
+                # Long Forward Edge (Curve Up)
+                elif ranks[v] - ranks[u] > 1:
+                    # Curve upwards to avoid crossing through nodes
+                    mid_x = (xu + xv) // 2
+                    mid_y = min(yu, yv) - 50 - abs(xu-xv)//5
+                    canvas.create_line(xu, yu-20, mid_x, mid_y, xv, yv-20, smooth=True, 
+                                     arrow='last', arrowshape=(10, 12, 4), fill=self.colors['muted'], width=1.5)
+                    canvas.create_text(mid_x, mid_y-14, text=label, fill=self.colors['text_fg'], font=('Consolas', 9))
+
+                # Adjacent Forward Edge (Straight)
                 else:
                     canvas.create_line(xu+25, yu, xv-25, yv, arrow='last', arrowshape=(10, 12, 4), fill=self.colors['muted'], width=1.5)
                     xm, ym = (xu+xv)//2, (yu+yv)//2
@@ -520,32 +531,32 @@ class CompilerSimulatorGUI:
         canvas.configure(scrollregion=(0, 0, x1 + 50, y1 + 50))
     
     def update_pda_view(self):
-        """Switches between Tree and Diagram view for PDA"""
+        """
+        Switches between Tree and Diagram view for PDA.
+        Called whenever the radio button toggle changes or when a new analysis completes.
+        """
         mode = self.pda_view_mode.get()
         self.pda_canvas.delete('all')
         
         if mode == "tree":
+            # If we have a stored parse tree from the last run, draw it.
             if hasattr(self, 'last_pda_tree') and self.last_pda_tree:
                 self.draw_pda_tree(self.last_pda_tree)
             else:
                 self.pda_canvas.create_text(400, 100, text="No Parse Tree Available", fill=self.colors['muted'], font=('Segoe UI', 12))
         else:
+            # Draw the static state diagram
             self.draw_pda_diagram()
 
     def draw_pda_diagram(self):
-        """Draws a static representation of the PDA logic"""
-        # Static PDA Structure representing the Shift-Reduce logic in compiler_engine.cpp
-        transitions = [
-            {'from': 'Start', 'to': 'Operand', 'label': 'number/id'},
-            {'from': 'Start', 'to': 'Start', 'label': "Push '('"},
-            {'from': 'Operand', 'to': 'Operator', 'label': '+, -, *, /'},
-            {'from': 'Operand', 'to': 'Operand', 'label': "Pop ')'"},
-            {'from': 'Operator', 'to': 'Operand', 'label': 'number/id'},
-            {'from': 'Operator', 'to': 'Start', 'label': "Push '('"},
-        ]
-        final_states = ['Operand'] # Ends on an operand/expression
-        
-        self.draw_dynamic_graph(self.pda_canvas, transitions, "PDA State Machine", final_states)
+        """
+        Draws the PDA logic using transitions parsed from the C++ backend.
+        """
+        if hasattr(self, 'pda_transitions') and self.pda_transitions:
+            self.draw_dynamic_graph(self.pda_canvas, self.pda_transitions, "PDA State Machine", self.pda_final_states)
+        else:
+            self.pda_canvas.delete('all')
+            self.pda_canvas.create_text(400, 100, text="No PDA Data Available", fill=self.colors['muted'], font=('Segoe UI', 12))
 
     def run_analysis(self):
         input_text = self.input_entry.get()
@@ -726,6 +737,10 @@ class CompilerSimulatorGUI:
                 # Store node objects: {'label': str, 'children': [node, node...]}
                 tree_stack = []
                 pda_final_tree = None
+                
+                # Dynamic PDA Graph Data
+                self.pda_transitions = []
+                self.pda_final_states = []
 
                 for line in output_lines:
                     # 1. Scanner Output
@@ -759,6 +774,19 @@ class CompilerSimulatorGUI:
                          dfa_final.append(state_id)
 
                     # 4. PDA Output
+                    elif "PDA_EDGE:" in line:
+                         # Format: PDA_EDGE: Start --(number/id)--> Operand
+                         m = re.search(r'(.*?)\s+--\((.*?)\)-->\s+(.*)', line.replace("PDA_EDGE:", "").strip())
+                         if m:
+                            u, label, v = m.groups()
+                            # Avoid duplicates if multiple runs output same structure
+                            if not any(t['from'] == u and t['to'] == v and t['label'] == label for t in self.pda_transitions):
+                                self.pda_transitions.append({'from': u, 'to': v, 'label': label})
+                    elif "PDA_FINAL:" in line:
+                         state_id = line.split(":")[1].strip()
+                         if state_id not in self.pda_final_states:
+                             self.pda_final_states.append(state_id)
+
                     elif "PDA_STEP:" in line:
                         # Format: PDA_STEP: 1 | ACTION | [stack] | desc
                         parts = line.split("|")
@@ -775,6 +803,10 @@ class CompilerSimulatorGUI:
                             self.pda_text.insert(tk.END, "-"*30 + "\n")
                             
                             # --- TREE CONSTRUCTION LOGIC ---
+                            # The PDA output from C++ is a flat sequence of steps (Shift, Reduce, etc.).
+                            # To visualize this as a tree, we must reconstruct the hierarchy.
+                            # We maintain a 'tree_stack' of nodes. When a REDUCE action happens (e.g., T -> T * F),
+                            # we pop the corresponding children from the stack and create a new parent node.
                             try:
                                 if action == "SHIFT":
                                     # Read operand 3 -> Label "3"
