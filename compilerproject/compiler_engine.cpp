@@ -22,8 +22,16 @@ struct Token {
 
 class Lexer {
 public:
+  /**
+   * Scans the input string and converts it into a stream of tokens based on
+   * predefined regex rules.
+   *
+   * @param input The source code string to be analyzed.
+   * @return A vector of Token objects representing the identified lexemes.
+   */
   vector<Token> tokenize(const string &input) {
     vector<Token> tokens;
+    // Define regex rules for various token types
     vector<pair<string, regex>> rules = {
         {"NUMBER", regex(R"(^[0-9]+(\.[0-9]+)?)")},
         {"LITERAL", regex(R"(^[a-zA-Z_][a-zA-Z0-9_]*)")},
@@ -45,9 +53,10 @@ public:
       bool matched = false;
       for (const auto &rule : rules) {
         smatch match;
+        // Attempt to match the current substring against the regex rule
         if (regex_search(substr, match, rule.second)) {
           string val = match.str();
-          if (rule.first != "WS") {
+          if (rule.first != "WS") { // Skip whitespace
             tokens.push_back({rule.first, val});
             // Standardized Output for Visualizer
             cout << "SCANNER: Found " << rule.first << " '" << val << "'"
@@ -78,6 +87,13 @@ struct State {
 
   State(int i) : id(i), isFinal(false) {}
 
+  /**
+   * Adds a transition from this state to another state on a given symbol.
+   *
+   * @param symbol The input symbol triggering the transition (empty string for
+   * epsilon).
+   * @param next The destination state.
+   */
   void addTransition(string symbol, State *next) {
     transitions[symbol].push_back(next);
   }
@@ -92,12 +108,20 @@ public:
 
   NFA(State *s, State *a) : start(s), accept(a) {}
 
+  /**
+   * Creates a new unique NFA state.
+   *
+   * @return A pointer to the newly created State object.
+   */
   static State *newState() {
     State *s = new State(stateCounter++);
     return s;
   }
 
-  // Visualization Output
+  /**
+   * Traverses the NFA using BFS and prints all transitions to standard output.
+   * This output is parsed by the GUI to visualize the NFA structure.
+   */
   void printEdges() {
     // BFS to print all edges
     set<int> visited;
@@ -126,15 +150,46 @@ public:
       }
     }
   }
+
+  /**
+   * Helper to collect all unique states reachable from start
+   */
+  void collectStates(State *root, set<State *> &visited) {
+    if (visited.count(root))
+      return;
+    visited.insert(root);
+    allStates.push_back(root);
+
+    for (auto const &[sym, targets] : root->transitions) {
+      for (State *next : targets) {
+        collectStates(next, visited);
+      }
+    }
+  }
+
+  /**
+   * Populates allStates vector for the DFA generator
+   */
+  void indexStates() {
+    set<State *> visited;
+    allStates.clear();
+    collectStates(start, visited);
+  }
 };
 int NFA::stateCounter = 0;
 
-// Shunting-yard for Regex Postfix
+/**
+ * Converts an infix regular expression to postfix notation using the
+ * Shunting-yard algorithm. It also inserts explicit concatenation operators
+ * ('.') where implicit concatenation occurs.
+ *
+ * @param regexStr The input regular expression (infix).
+ * @return The postfix representation of the regex.
+ */
 string toPostfix(string regexStr) {
   string output = "";
   stack<char> opStack;
   // Pre-formatting: insert explicit concatenation '.'
-  // Simplified logic: insert . between alphanumeric/paren if needed
   string formatted = "";
   for (size_t i = 0; i < regexStr.length(); i++) {
     char c = regexStr[i];
@@ -178,6 +233,14 @@ string toPostfix(string regexStr) {
   return output;
 }
 
+/**
+ * Constructs an NFA from a regex string using Thompson's Construction
+ * algorithm.
+ *
+ * @param regexStr The regular expression string.
+ * @return A pointer to the resulting NFA object, or nullptr if construction
+ * failed.
+ */
 NFA *regexToNFA(string regexStr) {
   string postfix = toPostfix(regexStr);
   stack<NFA *> stack;
@@ -225,23 +288,153 @@ NFA *regexToNFA(string regexStr) {
   if (!stack.empty()) {
     NFA *res = stack.top();
     res->accept->isFinal = true;
+    res->indexStates(); // Populate internal list of all states
     return res;
   }
   return nullptr;
 }
 
-// DFA Subset Construction (Simplified for visualizer output)
-void generateDFA(NFA *nfa) {
-  // Implementing full Subset Construction in single file is verbose.
-  // For this milestone, we satisfy requirements by implementing the Core
-  // Structures. We already output NFA. Optimization: We will output a
-  // Placeholder DFA log to show the GUI works. In a real full C++
-  // implementation, this would contain ~100 lines of Set mapping.
+// --- DFA SUBSET CONSTRUCTION HELPERS ---
 
-  cout << "DFA_FINAL: 1" << endl;           // Mock
-  cout << "DFA_EDGE: 0 --(a)--> 1" << endl; // Mock
-  cout << "DFA_EDGE: 0 --(b)--> 1" << endl; // Mock
-  cout << "DFA_EDGE: 1 --(a)--> 1" << endl; // Mock
+/**
+ * Computes epsilon closure for a set of NFA states.
+ * @param states Input set of states.
+ * @return Set of states reachable via epsilon transitions.
+ */
+set<State *> epsilonClosure(const set<State *> &states) {
+  set<State *> closure = states;
+  stack<State *> worklist;
+  for (State *s : states)
+    worklist.push(s);
+
+  while (!worklist.empty()) {
+    State *s = worklist.top();
+    worklist.pop();
+
+    // Find epsilon transitions ("")
+    if (s->transitions.count("")) {
+      for (State *next : s->transitions.at("")) {
+        if (closure.find(next) == closure.end()) {
+          closure.insert(next);
+          worklist.push(next);
+        }
+      }
+    }
+  }
+  return closure;
+}
+
+/**
+ * Computes the set of states reachable from 'states' on symbol 'symbol'.
+ * @param states Input set of NFA states.
+ * @param symbol The transition symbol.
+ * @return Set of next states.
+ */
+set<State *> move(const set<State *> &states, string symbol) {
+  set<State *> result;
+  for (State *s : states) {
+    if (s->transitions.count(symbol)) {
+      for (State *next : s->transitions.at(symbol)) {
+        result.insert(next);
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Generates a DFA from the given NFA using Subset Construction.
+ * Replaces the previous mock implementation with the standard algorithm.
+ *
+ * @param nfa The NFA to convert.
+ */
+void generateDFA(NFA *nfa) {
+  // 1. Identify Alphabet (skip epsilon)
+  set<string> alphabet;
+  for (State *s : nfa->allStates) {
+    for (auto const &[sym, targets] : s->transitions) {
+      if (!sym.empty())
+        alphabet.insert(sym);
+    }
+  }
+
+  // 2. Initial State = epsilonClosure({nfa->start})
+  set<State *> startSet = {nfa->start};
+  set<State *> dfaStart = epsilonClosure(startSet);
+
+  // DFA States Management
+  // We use vector<set<State*>> to store D-states, index is ID.
+  vector<set<State *>> dStates;
+  dStates.push_back(dfaStart);
+
+  // To quick check if a set exists (map set -> int ID)
+  map<set<State *>, int> dStateToId;
+  dStateToId[dfaStart] = 0;
+
+  queue<int> q; // Queue of DFA state IDs to process
+  q.push(0);
+
+  // Store Transitions: dfaTransitions[fromID][symbol] = toID
+  map<int, map<string, int>> dfaTransitions;
+
+  // Store Final States IDs
+  set<int> finalStates;
+  // Check if start state is final
+  bool startIsFinal = false;
+  for (State *s : dfaStart)
+    if (s->isFinal)
+      startIsFinal = true;
+  if (startIsFinal)
+    finalStates.insert(0);
+
+  // 3. Main Loop
+  while (!q.empty()) {
+    int uID = q.front();
+    q.pop();
+
+    set<State *> u = dStates[uID];
+
+    for (const string &symbol : alphabet) {
+      set<State *> moved = move(u, symbol);
+      set<State *> v = epsilonClosure(moved);
+
+      if (v.empty())
+        continue; // Dead state, usually ignore in simple viz, or implicit trap
+
+      if (dStateToId.find(v) == dStateToId.end()) {
+        // New DFA State found
+        int vID = dStates.size();
+        dStates.push_back(v);
+        dStateToId[v] = vID;
+        q.push(vID);
+
+        // Check if accepting
+        for (State *s : v) {
+          if (s->isFinal) {
+            finalStates.insert(vID);
+            break;
+          }
+        }
+      }
+
+      // Record Transition
+      dfaTransitions[uID][symbol] = dStateToId[v];
+    }
+  }
+
+  // 4. Output Results for Visualizer
+
+  // Print Final States
+  for (int id : finalStates) {
+    cout << "DFA_FINAL: " << id << endl;
+  }
+
+  // Print Edges
+  for (auto const &[uID, trans] : dfaTransitions) {
+    for (auto const &[sym, vID] : trans) {
+      cout << "DFA_EDGE: " << uID << " --(" << sym << ")--> " << vID << endl;
+    }
+  }
 }
 
 // ============================================================================
@@ -253,6 +446,12 @@ class Parser {
   int stepCount = 0;
 
 public:
+  /**
+   * Logs a step of the PDA execution to standard output for the GUI visualizer.
+   *
+   * @param action The action performed (e.g., SHIFT, REDUCE).
+   * @param desc A description of the action.
+   */
   void log(string action, string desc) {
     cout << "PDA_STEP: " << ++stepCount << " | " << action << " | [";
     for (size_t i = 0; i < stack.size(); i++) {
@@ -261,6 +460,12 @@ public:
     cout << "] | " << desc << endl;
   }
 
+  /**
+   * Determines the precedence of an operator.
+   *
+   * @param op The operator string.
+   * @return An integer representing precedence level (higher is stronger).
+   */
   int precedence(string op) {
     if (op == "*" || op == "/")
       return 2;
@@ -269,6 +474,12 @@ public:
     return 0;
   }
 
+  /**
+   * Parses the stream of tokens using a Pushdown Automaton (Shift-Reduce
+   * style). Validates the input against the grammar rules.
+   *
+   * @param tokens The vector of tokens to parse.
+   */
   void parse(const vector<Token> &tokens) {
     stepCount = 0;
     stack.clear();
@@ -324,6 +535,20 @@ public:
 // MAIN DRIVER
 // ============================================================================
 
+/**
+ * Main entry point of the compiler engine.
+ * [UPDATED] Uses C++17 standard features.
+ *
+ * Usage: compiler_engine <input_code> [regex_pattern]
+ *
+ * 1. Generates NFA/DFA from the provided regex pattern.
+ * 2. Scans the input code to produce tokens.
+ * 3. Parses the tokens using the PDA logic.
+ *
+ * @param argc Argument count.
+ * @param argv Argument vector.
+ * @return 0 on success, 1 on error.
+ */
 int main(int argc, char *argv[]) {
   if (argc < 2)
     return 1;
@@ -336,6 +561,7 @@ int main(int argc, char *argv[]) {
   NFA *nfa = regexToNFA(pattern);
   if (nfa) {
     nfa->printEdges();
+    // Generate DFA using real Subset Construction
     generateDFA(nfa);
   }
 

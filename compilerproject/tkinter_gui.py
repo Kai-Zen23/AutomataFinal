@@ -602,7 +602,7 @@ class CompilerSimulatorGUI:
             log_lines.append(f"SYSTEM: Found C++ Backend '{cpp_exe}'. Executing...\n")
             try:
                 # Run C++ Engine with Input AND Regex Pattern
-                process = subprocess.Popen([cpp_exe, input_text, current_regex], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                process = subprocess.Popen([cpp_exe, input_text, current_regex], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
                 stdout, stderr = process.communicate()
                 
                 output_lines = stdout.replace('\r\n', '\n').split('\n')
