@@ -4,15 +4,32 @@ import os
 import tkinter as tk
 from tkinter import ttk, scrolledtext
 
-# New Modular Imports
-import lexical 
-import syntax
+
+
+
+# ==============================================================================================
+# COMPILER SIMULATOR GUI (Python Frontend)
+# ==============================================================================================
+# This application serves as the visual front-end for the C++ Compiler Engine.
+# It allows users to:
+#   1. Input source code and regex patterns.
+#   2. Visualize Lexical Analysis (Tokens).
+#   3. View dynamically generated NFA and DFA state diagrams.
+#   4. Step through the Syntax Analysis (PDA) process.
+# ==============================================================================================
 
 class CompilerSimulatorGUI:
+    """
+    Main GUI Class for the Compiler Simulator.
+    Handles window creation, layout management, and interaction with the C++ backend.
+    """
     def __init__(self, root):
+        """
+        Initialize the application window and design themes.
+        """
         self.root = root
         self.root.title("Compiler Front-End Simulator")
-        self.root.geometry("1400x900")
+        self.root.geometry("1400x900")  # Large default size for better visibility
         # Color palette (black/white shades)
         self.colors = {
             'bg_main': '#1e1e1e',      # Darker background like VS Code
@@ -39,6 +56,9 @@ class CompilerSimulatorGUI:
         
     
     def create_widgets(self):
+        """
+        Sets up the entire UI layout, including the title bar, side panels, and content area.
+        """
         # Title
         title_frame = tk.Frame(self.root, bg=self.colors['panel_bg'], height=80)
         title_frame.pack(fill='x', padx=0, pady=0)
@@ -88,10 +108,12 @@ class CompilerSimulatorGUI:
         self.nfa_frame = self.create_nfa_tab(content_area)
         self.dfa_frame = self.create_dfa_tab(content_area)
         self.pda_frame = self.create_pda_tab(content_area)
+        self.tester_frame = self.create_tester_tab(content_area) # New Tab
+        self.pdalab_frame = self.create_pdalab_tab(content_area) # PDA Lab Tab
         self.log_frame = self.create_log_tab(content_area)
 
         # Pack views (stacked); we'll lift the active one
-        for f in (self.lexical_frame, self.nfa_frame, self.dfa_frame, self.pda_frame, self.log_frame):
+        for f in (self.lexical_frame, self.nfa_frame, self.dfa_frame, self.pda_frame, self.tester_frame, self.pdalab_frame, self.log_frame):
             f.place(in_=content_area, x=0, y=0, relwidth=1, relheight=1)
 
         # Navigation buttons moved to the right panel below the input
@@ -103,11 +125,13 @@ class CompilerSimulatorGUI:
         self.create_rounded_button(nav_frame, text='Lexical Analysis', command=lambda: self.show_view('lexical'), font=('Segoe UI', 11), height=45).pack(fill='x', pady=4)
         self.create_rounded_button(nav_frame, text='NFA Diagram', command=lambda: self.show_view('nfa'), font=('Segoe UI', 11), height=45).pack(fill='x', pady=4)
         self.create_rounded_button(nav_frame, text='DFA Diagram', command=lambda: self.show_view('dfa'), font=('Segoe UI', 11), height=45).pack(fill='x', pady=4)
-        self.create_rounded_button(nav_frame, text='Syntax (PDA)', command=lambda: self.show_view('pda'), font=('Segoe UI', 11), height=45).pack(fill='x', pady=4)
+        # self.create_rounded_button(nav_frame, text='Syntax (PDA)', command=lambda: self.show_view('pda'), font=('Segoe UI', 11), height=45).pack(fill='x', pady=4)
+        self.create_rounded_button(nav_frame, text='Regex Tester', command=lambda: self.show_view('tester'), font=('Segoe UI', 11), height=45).pack(fill='x', pady=4) # New Button
+        self.create_rounded_button(nav_frame, text='General PDA Lab', command=lambda: self.show_view('pdalab'), font=('Segoe UI', 11), height=45).pack(fill='x', pady=4) 
         self.create_rounded_button(nav_frame, text='Compilation Log', command=lambda: self.show_view('log'), font=('Segoe UI', 11), height=45).pack(fill='x', pady=4)
 
         # map names to frames and show default
-        self.views = {'lexical': self.lexical_frame, 'nfa': self.nfa_frame, 'dfa': self.dfa_frame, 'pda': self.pda_frame, 'log': self.log_frame}
+        self.views = {'lexical': self.lexical_frame, 'nfa': self.nfa_frame, 'dfa': self.dfa_frame, 'pda': self.pda_frame, 'tester': self.tester_frame, 'pdalab': self.pdalab_frame, 'log': self.log_frame}
         self.show_view('lexical')
 
     def create_lexical_tab(self, parent):
@@ -134,17 +158,7 @@ class CompilerSimulatorGUI:
         diagram_frame = tk.Frame(frame, bg=self.colors['card_bg'], relief='solid', borderwidth=2)
         diagram_frame.pack(fill='x', padx=20, pady=(0, 15))
 
-        # Regex Control Frame (Inside Diagram Frame for context)
-        regex_frame = tk.Frame(diagram_frame, bg=self.colors['card_bg'])
-        regex_frame.pack(fill='x', padx=10, pady=(10, 0))
 
-        tk.Label(regex_frame, text="Regex Pattern:", font=self.header_font, bg=self.colors['card_bg'], fg=self.colors['text_fg']).pack(side='left', padx=5)
-        
-        self.regex_entry = tk.Entry(regex_frame, font=('Consolas', 11), bg=self.colors['bg_main'], fg=self.colors['text_fg'], insertbackground=self.colors['text_fg'], width=30)
-        self.regex_entry.insert(0, "(a|b)(a|b|0|1)*") # Default
-        self.regex_entry.pack(side='left', padx=10)
-        
-        self.create_rounded_button(regex_frame, text="Generate NFA/DFA", command=self.generate_automata, font=('Segoe UI', 10, 'bold'), height=30).pack(side='left', padx=10)
 
         diagram_label = tk.Label(diagram_frame, text="NFA State Diagram", 
                                 font=('Segoe UI', 10), bg=self.colors['card_bg'], fg=self.colors['muted'])
@@ -156,17 +170,15 @@ class CompilerSimulatorGUI:
         canvas_container.pack(fill='x', padx=20, pady=(0, 15))
 
         self.nfa_canvas = tk.Canvas(canvas_container, height=200, bg=self.colors['card_bg'], highlightthickness=0)
-        self.nfa_canvas.pack(side='top', fill='both', expand=True)
-
-        # Scrollbars
-        nfa_scroll_x = ttk.Scrollbar(canvas_container, orient='horizontal', command=self.nfa_canvas.xview)
-        nfa_scroll_x.pack(side='bottom', fill='x')
         
+        # Scrollbars - Pack Y first to maximize height, then X
         nfa_scroll_y = ttk.Scrollbar(canvas_container, orient='vertical', command=self.nfa_canvas.yview)
         nfa_scroll_y.pack(side='right', fill='y')
         
+        nfa_scroll_x = ttk.Scrollbar(canvas_container, orient='horizontal', command=self.nfa_canvas.xview)
+        nfa_scroll_x.pack(side='bottom', fill='x')
+        
         self.nfa_canvas.configure(xscrollcommand=nfa_scroll_x.set, yscrollcommand=nfa_scroll_y.set)
-        # Repack canvas to take remaining space
         self.nfa_canvas.pack(side='left', fill='both', expand=True)
 
         # Steps text
@@ -202,12 +214,12 @@ class CompilerSimulatorGUI:
 
         self.dfa_canvas = tk.Canvas(canvas_container, height=200, bg=self.colors['card_bg'], highlightthickness=0)
         
-        # Scrollbars
-        dfa_scroll_x = ttk.Scrollbar(canvas_container, orient='horizontal', command=self.dfa_canvas.xview)
-        dfa_scroll_x.pack(side='bottom', fill='x')
-        
+        # Scrollbars - Pack Y first to maximize height, then X
         dfa_scroll_y = ttk.Scrollbar(canvas_container, orient='vertical', command=self.dfa_canvas.yview)
         dfa_scroll_y.pack(side='right', fill='y')
+        
+        dfa_scroll_x = ttk.Scrollbar(canvas_container, orient='horizontal', command=self.dfa_canvas.xview)
+        dfa_scroll_x.pack(side='bottom', fill='x')
         
         self.dfa_canvas.configure(xscrollcommand=dfa_scroll_x.set, yscrollcommand=dfa_scroll_y.set)
         self.dfa_canvas.pack(side='left', fill='both', expand=True)
@@ -239,29 +251,72 @@ class CompilerSimulatorGUI:
                          pady=15, bg=self.colors['card_bg'], fg=self.colors['text_fg'], anchor='center', justify='center')
         self.result_label.pack(fill='x', padx=10)
         
-        # PDA info
-        info_frame = tk.Frame(frame, bg=self.colors['card_bg'], relief='solid', borderwidth=2)
-        info_frame.pack(fill='x', padx=20, pady=(0, 15))
+        # Visualization Section
+        viz_frame = tk.Frame(frame, bg=self.colors['card_bg'], relief='solid', borderwidth=2)
+        viz_frame.pack(fill='x', padx=20, pady=(0, 15))
+
+        # Header with Toggle
+        header_frame = tk.Frame(viz_frame, bg=self.colors['card_bg'])
+        header_frame.pack(fill='x', padx=10, pady=5)
         
-        info_title = tk.Label(info_frame, text="PDA Configuration:", 
-                             font=('Arial', 11, 'bold'), bg=self.colors['card_bg'], fg=self.colors['muted'])
-        info_title.pack(anchor='w', padx=15, pady=(10, 5))
+        tk.Label(header_frame, text="PDA Visualization", font=self.header_font, bg=self.colors['card_bg'], fg=self.colors['muted']).pack(side='left')
+
+        toggle_frame = tk.Frame(header_frame, bg=self.colors['card_bg'])
+        toggle_frame.pack(side='right')
         
-        info1 = tk.Label(info_frame, text="State: q0 (start) → q1 (processing) → qAccept/qReject", 
-                        font=('Arial', 10), bg=self.colors['card_bg'], fg=self.colors['text_fg'])
-        info1.pack(anchor='w', padx=15, pady=2)
+        # Parse Tree Header
+        tk.Label(toggle_frame, text="Parse Tree Visualization", font=self.ui_font, bg=self.colors['card_bg'], fg=self.colors['muted']).pack(side='right', padx=5)
         
-        info2 = tk.Label(info_frame, text="Stack: Push '(' on '(', Pop on ')'", 
-                        font=('Arial', 10), bg=self.colors['card_bg'], fg=self.colors['text_fg'])
-        info2.pack(anchor='w', padx=15, pady=(2, 10))
+        # Sub-container for Tree and Stack
+        viz_container = tk.Frame(viz_frame, bg=self.colors['card_bg'])
+        viz_container.pack(fill='both', expand=True, padx=20, pady=(0, 15))
         
-        # Steps
+        # 1. Parse Tree Canvas (Left)
+        tree_frame = tk.Frame(viz_container, bg=self.colors['card_bg'], width=400)
+        tree_frame.pack(side='left', fill='both', expand=True)
+        tk.Label(tree_frame, text="Parse Tree", font=('Segoe UI', 9, 'bold'), bg=self.colors['card_bg'], fg=self.colors['muted']).pack(anchor='n')
+        
+        self.pda_canvas = tk.Canvas(tree_frame, height=250, bg=self.colors['card_bg'], highlightthickness=0)
+        
+        pda_scroll_y = ttk.Scrollbar(tree_frame, orient='vertical', command=self.pda_canvas.yview)
+        pda_scroll_y.pack(side='right', fill='y')
+        pda_scroll_x = ttk.Scrollbar(tree_frame, orient='horizontal', command=self.pda_canvas.xview)
+        pda_scroll_x.pack(side='bottom', fill='x')
+        
+        self.pda_canvas.configure(xscrollcommand=pda_scroll_x.set, yscrollcommand=pda_scroll_y.set)
+        self.pda_canvas.pack(side='left', fill='both', expand=True)
+
+        # 2. Stack Viz Canvas (Right)
+        stack_frame = tk.Frame(viz_container, bg=self.colors['card_bg'], width=200)
+        stack_frame.pack(side='right', fill='y', padx=(10, 0))
+        tk.Label(stack_frame, text="PDA Stack", font=('Segoe UI', 9, 'bold'), bg=self.colors['card_bg'], fg=self.colors['muted']).pack(anchor='n')
+
+        self.stack_canvas = tk.Canvas(stack_frame, width=150, height=250, bg=self.colors['panel_bg'], highlightthickness=1, highlightbackground='#3c3c3c')
+        self.stack_canvas.pack(fill='y', expand=True)
+
+        # Controls
+        controls_frame = tk.Frame(frame, bg=self.colors['card_bg'])
+        controls_frame.pack(fill='x', padx=20, pady=5)
+        
+        self.step_label = tk.Label(controls_frame, text="Step: 0 / 0", font=('Consolas', 10), bg=self.colors['card_bg'], fg=self.colors['text_fg'])
+        self.step_label.pack(side='left', padx=10)
+
+        self.btn_prev = tk.Button(controls_frame, text="<< Prev", command=self.prev_step, bg=self.colors['button_bg'], fg=self.colors['button_fg'], relief='flat')
+        self.btn_prev.pack(side='left', padx=5)
+        
+        self.btn_next = tk.Button(controls_frame, text="Next >>", command=self.next_step, bg=self.colors['button_bg'], fg=self.colors['button_fg'], relief='flat')
+        self.btn_next.pack(side='left', padx=5)
+
+        self.btn_reset = tk.Button(controls_frame, text="Reset", command=self.reset_steps, bg=self.colors['button_bg'], fg=self.colors['button_fg'], relief='flat')
+        self.btn_reset.pack(side='left', padx=5)
+
+        # Steps Text Log
         steps_label = tk.Label(frame, text="PDA Execution Trace:", 
                               font=('Arial', 12, 'bold'), bg=self.colors['card_bg'], fg=self.colors['text_fg'])
         steps_label.pack(anchor='w', padx=20, pady=(10, 5))
         
         self.pda_text = scrolledtext.ScrolledText(frame, font=('Courier', 10), 
-                                                 height=15, wrap='word', bg=self.colors['card_bg'], fg=self.colors['text_fg'], insertbackground=self.colors['text_fg'])
+                                                 height=10, wrap='word', bg=self.colors['card_bg'], fg=self.colors['text_fg'], insertbackground=self.colors['text_fg'])
         self.pda_text.pack(fill='both', expand=True, padx=20, pady=(0, 20))
         
         return frame
@@ -278,14 +333,153 @@ class CompilerSimulatorGUI:
         self.log_text.pack(fill='both', expand=True, padx=20, pady=(0, 20))
         
         return frame
+
+    def create_tester_tab(self, parent):
+        frame = tk.Frame(parent, bg=self.colors['card_bg'])
+        
+        title = tk.Label(frame, text="Regex Tester (NFA Simulator)", 
+                        font=self.header_font, bg=self.colors['card_bg'], fg=self.colors['text_fg'])
+        title.pack(anchor='w', padx=20, pady=15)
+        
+        # Regex Input
+        tk.Label(frame, text="Regex Pattern:", font=('Segoe UI', 10, 'bold'), bg=self.colors['card_bg'], fg=self.colors['text_fg']).pack(anchor='w', padx=20)
+        self.tester_regex = tk.Entry(frame, font=('Consolas', 11), bg=self.colors['panel_bg'], fg=self.colors['text_fg'], insertbackground='white')
+        self.tester_regex.pack(fill='x', padx=20, pady=(0, 5))
+        self.tester_regex.bind('<KeyRelease>', self.validate_regex_input)
+        
+        self.tester_error_label = tk.Label(frame, text="", font=('Segoe UI', 9), bg=self.colors['card_bg'], fg='#f44336')
+        self.tester_error_label.pack(anchor='w', padx=20, pady=(0, 10))
+        
+        # Test Strings Input
+        tk.Label(frame, text="Test Strings (one per line or comma/space separated):", font=('Segoe UI', 10, 'bold'), bg=self.colors['card_bg'], fg=self.colors['text_fg']).pack(anchor='w', padx=20)
+        self.tester_input = scrolledtext.ScrolledText(frame, font=('Consolas', 11), height=6, bg=self.colors['panel_bg'], fg=self.colors['text_fg'], insertbackground='white')
+        self.tester_input.pack(fill='x', padx=20, pady=(0, 15))
+        
+        # Run Button
+        self.create_rounded_button(frame, text="✅ Validate Strings", command=self.run_tester, font=('Segoe UI', 11, 'bold'), height=40).pack(fill='x', padx=20, pady=(0,15))
+        
+        # Results Area
+        tk.Label(frame, text="Validation Results:", font=('Segoe UI', 10, 'bold'), bg=self.colors['card_bg'], fg=self.colors['text_fg']).pack(anchor='w', padx=20)
+        self.tester_results = scrolledtext.ScrolledText(frame, font=('Consolas', 11), height=10, bg=self.colors['panel_bg'], fg=self.colors['text_fg'], state='disabled')
+        self.tester_results.pack(fill='both', expand=True, padx=20, pady=(0, 20))
+        
+        return frame
+
+    def run_tester(self):
+        pattern = self.tester_regex.get().strip()
+        raw_input = self.tester_input.get("1.0", tk.END).strip()
+        
+        if not pattern:
+             self.tester_results.config(state='normal')
+             self.tester_results.delete('1.0', tk.END)
+             self.tester_results.insert('1.0', "Error: Please enter a regex pattern.")
+             self.tester_results.config(state='disabled')
+             return
+
+        # Split input into lines or words
+        # Be robust: replace commas with spaces, then split
+        norm_input = raw_input.replace(',', ' ').replace('\n', ' ')
+        test_strings = [s.strip() for s in norm_input.split() if s.strip()]
+        
+        if not test_strings:
+             self.tester_results.config(state='normal')
+             self.tester_results.delete('1.0', tk.END)
+             self.tester_results.insert('1.0', "Error: Please enter at least one test string.")
+             self.tester_results.config(state='disabled')
+             return
+             
+        # Call Backend
+        try:
+            # Use new advanced engine
+            binary_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bin', 'regex_engine.exe')
+            if not os.path.exists(binary_path):
+                # Fallback or error
+                 binary_path = 'compiler_engine.exe' # Old one if new doesn't exist?
+            
+            cmd = [binary_path, 'TEST', pattern] + test_strings
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            # Use subprocess
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=script_dir)
+            
+            output = result.stdout
+            
+            self.tester_results.config(state='normal')
+            self.tester_results.delete('1.0', tk.END)
+            
+            if "ERROR|" in output: # Format: ERROR|Msg|Pos
+                 self.tester_results.insert('1.0', f"System Error: {output}")
+            elif "ERROR: Invalid Regex" in output:
+                self.tester_results.insert('1.0', f"Invalid Regex Pattern: {pattern}\n Check syntax.")
+            else:
+                for line in output.split('\n'):
+                    if line.startswith("RESULT:"):
+                        # line format: RESULT: string -> Accepted/Rejected
+                        content = line.replace("RESULT:", "").strip()
+                        if "-> Accepted" in content:
+                            self.tester_results.insert(tk.END, content + "\n", 'accepted')
+                        else:
+                            self.tester_results.insert(tk.END, content + "\n", 'rejected')
+
+            # Tag config
+            self.tester_results.tag_config('accepted', foreground='#4caf50') # Green
+            self.tester_results.tag_config('rejected', foreground='#f44336') # Red
+            
+            self.tester_results.config(state='disabled')
+            
+        except Exception as e:
+            self.tester_results.config(state='normal')
+            self.tester_results.insert(tk.END, f"System Error: {e}")
+            self.tester_results.config(state='disabled')
+
+    def validate_regex_input(self, event=None):
+        pattern = self.tester_regex.get().strip()
+        if not pattern:
+            self.tester_error_label.config(text="")
+            self.tester_regex.config(bg=self.colors['panel_bg'])
+            return
+
+        try:
+            binary_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bin', 'regex_engine.exe')
+            if not os.path.exists(binary_path): return
+
+            cmd = [binary_path, 'VALIDATE', pattern]
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            # Use subprocess (fast check)
+            # Startupinfo to hide window on Windows if needed, but simple run is ok for now
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=script_dir)
+            output = result.stdout.strip()
+            
+            if output == "VALID":
+                self.tester_error_label.config(text="✓ Valid Regex", fg='#4caf50')
+                self.tester_regex.config(bg=self.colors['panel_bg'])
+            elif output.startswith("ERROR|"):
+                # ERROR|Msg|Pos
+                parts = output.split('|')
+                if len(parts) >= 3:
+                    msg = parts[1]
+                    # pos = int(parts[2]) # Parsing pos if we want to underline
+                    self.tester_error_label.config(text=f"✗ {msg}", fg='#f44336')
+                    self.tester_regex.config(bg='#3ed1cfcf') # Slight red tint? Or just rely on label
+                else:
+                    self.tester_error_label.config(text="✗ Invalid Regex", fg='#f44336')
+        except:
+            pass
+
     
     def draw_nfa_diagram(self, transitions, final_states):
+        """Renders the NFA Graph using the custom layout engine."""
         self.draw_dynamic_graph(self.nfa_canvas, transitions, "NFA", final_states)
 
     def draw_dfa_diagram(self, transitions, final_states):
         self.draw_dynamic_graph(self.dfa_canvas, transitions, "DFA", final_states)
 
     def draw_dynamic_graph(self, canvas, transitions, title, final_states):
+        """
+        A custom graph layout engine (DAG-based) to visualize Automata.
+        It ranks nodes by depth (Topological-like sort) and minimizes edge crossing.
+        """
         canvas.delete('all')
         if not transitions:
             return
@@ -401,7 +595,16 @@ class CompilerSimulatorGUI:
                                      arrow='last', arrowshape=(10, 12, 4), fill=self.colors['muted'], width=1.5)
                     canvas.create_text(mid_x, mid_y+14, text=label, fill=self.colors['text_fg'], font=('Consolas', 9))
                 
-                # Forward Edge (Straight)
+                # Long Forward Edge (Curve Up)
+                elif ranks[v] - ranks[u] > 1:
+                    # Curve upwards to avoid crossing through nodes
+                    mid_x = (xu + xv) // 2
+                    mid_y = min(yu, yv) - 50 - abs(xu-xv)//5
+                    canvas.create_line(xu, yu-20, mid_x, mid_y, xv, yv-20, smooth=True, 
+                                     arrow='last', arrowshape=(10, 12, 4), fill=self.colors['muted'], width=1.5)
+                    canvas.create_text(mid_x, mid_y-14, text=label, fill=self.colors['text_fg'], font=('Consolas', 9))
+
+                # Adjacent Forward Edge (Straight)
                 else:
                     canvas.create_line(xu+25, yu, xv-25, yv, arrow='last', arrowshape=(10, 12, 4), fill=self.colors['muted'], width=1.5)
                     xm, ym = (xu+xv)//2, (yu+yv)//2
@@ -441,7 +644,81 @@ class CompilerSimulatorGUI:
         x0, y0, x1, y1 = canvas.bbox("all") or (0,0,0,0)
         # Add some padding
         canvas.configure(scrollregion=(0, 0, x1 + 50, max(c_height, y1 + 50)))
+
+    def draw_pda_tree(self, root_node):
+        canvas = self.pda_canvas
+        canvas.delete('all')
+        
+        if not root_node: return
+
+        # 1. Assign Coordinates (Reingold-Tilford simplifed)
+        # Recursively determine width of each node
+        level_y_gap = 60
+        sibling_x_gap = 20
+        
+        def iter_width(node):
+            if not node['children']:
+                node['width'] = 40
+            else:
+                w = 0
+                for c in node['children']:
+                    w += iter_width(c)
+                node['width'] = max(40, w + (len(node['children'])-1)*sibling_x_gap)
+            return node['width']
+            
+        iter_width(root_node)
+        
+        # 2. Assign positions
+        node_positions = [] # (x, y, label)
+        edges = [] # (x1, y1, x2, y2)
+        
+        def assign_pos(node, x, y):
+            node_positions.append((x, y, node['label']))
+            
+            # center children under x
+            if node['children']:
+                total_w = node['width']
+                start_x = x - total_w / 2
+                current_x = start_x
+                
+                for c in node['children']:
+                    child_x = current_x + c['width']/2
+                    child_y = y + level_y_gap
+                    edges.append((x, y + 15, child_x, child_y - 15))
+                    assign_pos(c, child_x, child_y)
+                    current_x += c['width'] + sibling_x_gap
+
+        assign_pos(root_node, 400, 40) # Start centerish
+        
+        # 3. Draw
+        # Draw edges first
+        for (x1, y1, x2, y2) in edges:
+            canvas.create_line(x1, y1, x2, y2, fill='#555555', width=2)
+            
+        # Draw nodes
+        for (x, y, label) in node_positions:
+            r = 18
+            # Color coding
+            fill = '#2d2d2d'
+            outline = '#007acc'
+            text_col = '#ffffff'
+            
+            if label in ['+', '-', '*', '/', '=']:
+                fill = '#3c3c3c'
+                outline = '#ff9800' # Orange for ops
+            elif label.isdigit() or label.replace('.', '').isdigit():
+                fill = '#3c3c3c'
+                outline = '#4caf50' # Green for numbers
+                
+            canvas.create_oval(x-r, y-r, x+r, y+r, fill=fill, outline=outline, width=2)
+            canvas.create_text(x, y, text=label, fill=text_col, font=('Segoe UI', 9, 'bold'))
+            
+        # Scroll region
+        x0, y0, x1, y1 = canvas.bbox("all") or (0,0,0,0)
+        canvas.configure(scrollregion=(0, 0, x1 + 50, y1 + 50))
     
+
+
     def run_analysis(self):
         input_text = self.input_entry.get()
         
@@ -456,6 +733,13 @@ class CompilerSimulatorGUI:
             # if not os.path.exists(exe_path):
             #     self.compile_cpp(script_dir)
 
+            # ---------------------------------------------------------------------------------
+            # RUN C++ BACKEND
+            # ---------------------------------------------------------------------------------
+            # We execute the compiled C++ binary ('compiler_engine.exe') as a subprocess.
+            # The C++ engine takes the input string and performs all the heavy lifting:
+            # parsing regex, generating NFA/DFA, and running the PDA.
+            # ---------------------------------------------------------------------------------
             # Run the executable with input (use absolute path)
             # result = subprocess.run([exe_path], 
             #                       input=input_text, 
@@ -528,7 +812,7 @@ class CompilerSimulatorGUI:
     
     def create_example_menu(self, parent):
         # Create a Menubutton for examples
-        mb = tk.Menubutton(parent, text="▼ Load Example Input", 
+        mb = tk.Menubutton(parent, text="", 
                           bg=self.colors['panel_bg'], fg=self.colors['accent'],
                           font=('Segoe UI', 10), activebackground=self.colors['panel_bg'], activeforeground=self.colors['text_fg'],
                           relief='flat')
@@ -566,7 +850,10 @@ class CompilerSimulatorGUI:
         subprocess.run(['g++', '-o', 'compiler_engine', 'compiler_engine.cpp', '-std=c++11'], cwd=script_dir)
     
     def simulate_analysis(self, input_text):
-        """Perform real analysis using C++ Backend primarily"""
+        """
+        Perform the actual analysis by bridging with the C++ backend.
+        Captures stdout from the C++ program and parses it to update the GUI.
+        """
         import re
         
         # Clear all tabs
@@ -577,6 +864,11 @@ class CompilerSimulatorGUI:
         self.log_text.delete('1.0', tk.END)
         self.nfa_canvas.delete('all')
         self.dfa_canvas.delete('all')
+        self.stack_canvas.delete('all')
+        
+        # Reset Stepper functionality
+        self.pda_steps = [] # List of {step_num, action, stack (list), desc}
+        self.current_step_index = -1
         
         log_lines = []
         log_lines.append("=== COMPILATION STARTED ===\n")
@@ -595,17 +887,17 @@ class CompilerSimulatorGUI:
         self.lexical_text.insert('1.0', grammar_info)
         
         # -------------------------------------------------------------
-        # C++ BACKEND INTEGRATION
+        # 1. PREPARE INPUT and CALL BACKEND
         # -------------------------------------------------------------
-        # Get Current Regex for Automata Generation
-        current_regex = self.regex_entry.get().strip()
+        # Use the input text as the regex pattern for this demo
+        current_regex = input_text.strip()
         
         cpp_exe = "compiler_engine.exe"
         if os.path.exists(cpp_exe):
             log_lines.append(f"SYSTEM: Found C++ Backend '{cpp_exe}'. Executing...\n")
             try:
                 # Run C++ Engine with Input AND Regex Pattern
-                process = subprocess.Popen([cpp_exe, input_text, current_regex], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                process = subprocess.Popen([cpp_exe, input_text, current_regex], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
                 stdout, stderr = process.communicate()
                 
                 output_lines = stdout.replace('\r\n', '\n').split('\n')
@@ -616,6 +908,19 @@ class CompilerSimulatorGUI:
                 dfa_transitions = []
                 dfa_final = []
                 
+                # Parse Tree Simulation Stack
+                # Store node objects: {'label': str, 'children': [node, node...]}
+                tree_stack = []
+                pda_final_tree = None
+                
+
+                # -------------------------------------------------------------
+                # 2. PARSE OUTPUT
+                # -------------------------------------------------------------
+                # The C++ engine outputs specific markers (e.g., "NFA_EDGE:", "PDA_STEP:")
+                # which we intercept here to build the data structures for visualization.
+                # -------------------------------------------------------------
+
                 for line in output_lines:
                     # 1. Scanner Output
                     if "SCANNER: Found" in line:
@@ -648,30 +953,118 @@ class CompilerSimulatorGUI:
                          dfa_final.append(state_id)
 
                     # 4. PDA Output
+
+
                     elif "PDA_STEP:" in line:
                         # Format: PDA_STEP: 1 | ACTION | [stack] | desc
                         parts = line.split("|")
                         if len(parts) >= 4:
                             step_num = parts[0].replace("PDA_STEP:", "").strip()
                             action = parts[1].strip()
-                            stack = parts[2].strip()
+                            stack_content = parts[2].strip()
                             desc = parts[3].strip()
                             
                             self.pda_text.insert(tk.END, f"Step {step_num}:\n")
                             self.pda_text.insert(tk.END, f"  Action: {action}\n")
-                            self.pda_text.insert(tk.END, f"  Stack:  {stack}\n")
+                            self.pda_text.insert(tk.END, f"  Stack:  {stack_content}\n")
                             self.pda_text.insert(tk.END, f"  Desc:   {desc}\n")
                             self.pda_text.insert(tk.END, "-"*30 + "\n")
                             
+                            # Parse stack string "[a, b]" -> ["a", "b"]
+                            stack_list = []
+                            if stack_content.strip() and stack_content != "[]":
+                                # Simple splitting for this demo (handle brackets)
+                                raw = stack_content.replace("[", "").replace("]", "")
+                                if raw.strip():
+                                    stack_list = [s.strip() for s in raw.split(',')]
+                            
+                            self.pda_steps.append({
+                                'step': int(step_num),
+                                'action': action,
+                                'stack': stack_list,
+                                'desc': desc
+                            })
+
+                            
+
+                            
+                            # --- TREE CONSTRUCTION LOGIC ---
+                            # The PDA output from C++ is a flat sequence of steps (Shift, Reduce, etc.).
+                            # To visualize this as a tree, we must reconstruct the hierarchy.
+                            # We maintain a 'tree_stack' of nodes. When a REDUCE action happens (e.g., T -> T * F),
+                            # we pop the corresponding children from the stack and create a new parent node.
+                            try:
+                                if action == "SHIFT":
+                                    # Read operand 3 -> Label "3"
+                                    # Read variable x -> Label "x"
+                                    # Read function f -> Label "f"
+                                    label = desc
+                                    for prefix in ["Read operand", "Read variable", "Read function"]:
+                                        label = label.replace(prefix, "")
+                                    label = label.strip()
+                                    
+                                    tree_stack.append({'label': label, 'children': []})
+                                elif action == "PUSH":
+                                    # Push operator + -> Label "+"
+                                    # Push '(' -> Label "("
+                                    label = desc.replace("Push operator", "").replace("Push", "").replace("'", "").strip()
+                                    tree_stack.append({'label': label, 'children': []})
+                                elif action == "POP/REDUCE":
+                                    # Apply T -> T * F
+                                    # format: Apply LHS -> RHS
+                                    if "->" in desc:
+                                        rule = desc.replace("Apply", "").strip()
+                                        lhs, rhs = rule.split("->")
+                                        lhs = lhs.strip()
+                                        rhs_parts = rhs.strip().split()
+                                        
+                                        # Pop N items from stack where N = len(rhs_parts)
+                                        # C++ logic might have minimal stack ops, so we heuristically pop
+                                        # based on the rule length.
+                                        children = []
+                                        count = len(rhs_parts)
+                                        if count > len(tree_stack): count = len(tree_stack) # Safety
+                                        
+                                        if count > 0:
+                                            children = tree_stack[-count:]
+                                            tree_stack = tree_stack[:-count]
+                                        
+                                        node = {'label': lhs, 'children': children}
+                                        tree_stack.append(node)
+                                        
+                                elif action == "POP" and "Match" in desc:
+                                    # Match '('
+                                    # This usually means we close a parenthesis group.
+                                    # Structure on stack might be: '(', 'E'
+                                    # We want to reduce this to 'F' or similar, but the log just says "Match '('".
+                                    # We'll pop the current top (expression) and the '(' below it.
+                                    if len(tree_stack) >= 2:
+                                        expr = tree_stack.pop()
+                                        lparen = tree_stack.pop()
+                                        # Synthesize a parent node (e.g. Factor)
+                                        node = {'label': 'F', 'children': [lparen, expr, {'label': ')', 'children': []}]}
+                                        tree_stack.append(node)
+                                    
+                            except Exception as e:
+                                print(f"Tree build error: {e}")
+                                
                             if action == "ACCEPT":
                                 self.result_label.config(text="✓ SYNTAX CORRECT", fg="#4caf50")
                                 log_lines.append("RESULT: Syntax Accepted.\n")
+                                if tree_stack:
+                                    pda_final_tree = tree_stack[0] # Root
                             elif action == "REJECT":
                                 self.result_label.config(text="✗ SYNTAX ERROR (REJECTED)", fg="#f44336")
                                 log_lines.append("RESULT: Syntax Rejected by PDA.\n")
 
                 if nfa_transitions: self.draw_nfa_diagram(nfa_transitions, nfa_final)
                 if dfa_transitions: self.draw_dfa_diagram(dfa_transitions, dfa_final)
+                
+                if pda_final_tree:
+                    self.draw_pda_tree(pda_final_tree)
+                else:
+                    self.pda_canvas.delete('all')
+                    self.pda_canvas.create_text(400, 100, text="No Parse Tree Available", fill=self.colors['muted'], font=('Segoe UI', 12))
 
             except Exception as e:
                 log_lines.append(f"SYSTEM ERROR: Failed to run C++ engine: {e}\n")
@@ -688,72 +1081,470 @@ class CompilerSimulatorGUI:
         for line in log_lines:
             self.log_text.insert(tk.END, line)
 
-    def generate_automata(self, sync=False):
-        """Generates NFA and DFA from the regex entry"""
-        regex = self.regex_entry.get().strip()
-        
-        # User-friendly corrections
-        if ',' in regex:
-            regex = regex.replace(',', '|') # Treat comma as OR
-            regex = regex.replace(' ', '')  # Remove spaces usually associated with lists
-        
-        if not sync: # If called manually, clear logs to show we are working
-            self.nfa_text.delete('1.0', tk.END)
-            self.dfa_text.delete('1.0', tk.END)
-       
-        self.nfa_text.insert(tk.END, f"\nGenerating Automata for Regex: {regex}\n")
-        self.nfa_text.insert(tk.END, "-"*40 + "\n")
-        self.nfa_text.see(tk.END)
-        
-        # Clear Canvases immediately to show activity
-        self.nfa_canvas.delete('all')
-        self.dfa_canvas.delete('all')
+        # After parsing all logs
+        if self.pda_steps:
+             self.current_step_index = 0
+             self.update_pda_viz()
+        else:
+             self.step_label.config(text="Step: 0 / 0")
 
+    def prev_step(self):
+        if self.current_step_index > 0:
+            self.current_step_index -= 1
+            self.update_pda_viz()
 
-        nfa = None
-        try:
-            nfa = lexical.regex_to_nfa(regex)
-            steps = nfa.get_steps()
+    def next_step(self):
+        if self.current_step_index < len(self.pda_steps) - 1:
+            self.current_step_index += 1
+            self.update_pda_viz()
             
-            # Text Log
-            for step in steps:
-                self.nfa_text.insert(tk.END, f"{step['from']} --({step['label']})--> {step['to']}\n")
-                
-            # Update Diagram dynamically with explicit final state
-            nfa_finals = {nfa.accept.name}
-            self.draw_nfa_diagram(steps, nfa_finals)
-            self.nfa_text.insert(tk.END, "NFA Generated successfully.\n")
-            self.nfa_text.see(tk.END)
+    def reset_steps(self):
+        if self.pda_steps:
+            self.current_step_index = 0
+            self.update_pda_viz()
+            
+    def update_pda_viz(self):
+        if not self.pda_steps or self.current_step_index < 0:
+            return
+            
+        step = self.pda_steps[self.current_step_index]
+        self.step_label.config(text=f"Step: {step['step']} / {len(self.pda_steps)}")
+        
+        # 1. Update Stack Viz
+        self.draw_stack(step['stack'])
+        
+        # 2. Highlight text log (optional - simple scroll to end for now)
+        # self.pda_text.see(tk.END) 
+        
+    def draw_stack(self, stack_items):
+        canvas = self.stack_canvas
+        canvas.delete('all')
+        
+        w = int(canvas['width'])
+        h = int(canvas['height'])
+        item_h = 30
+        margin_bottom = 10
+        
+        # Draw base
+        canvas.create_line(10, h-5, w-10, h-5, width=3, fill='#555')
+        
+        for i, item in enumerate(stack_items):
+            # Bottom-up
+            y2 = h - margin_bottom - (i * item_h)
+            y1 = y2 - item_h
+            x1 = 20
+            x2 = w - 20
+            
+            # Color code
+            fill = '#2d2d2d'
+            if item in ['(', ')']: fill = '#3c3c3c'
+            elif item in ['+', '-', '*', '/']: fill = '#3e3e42' 
+            
+            canvas.create_rectangle(x1, y1, x2, y2, fill=fill, outline='#007acc')
+            canvas.create_text((x1+x2)//2, (y1+y2)//2, text=item, fill='white', font=('Consolas', 10, 'bold'))
+        
+        # Label Top
+        if stack_items:
+             y_top = h - margin_bottom - (len(stack_items) * item_h)
+             canvas.create_text(w//2, y_top - 10, text="TOP", fill='#007acc', font=('Segoe UI', 8))
+
+
+
+
+    # ==============================================================================================
+    # PDA LAB TAB (New)
+    # ==============================================================================================
+
+
+    def create_pdalab_tab(self, parent):
+        frame = tk.Frame(parent, bg=self.colors['card_bg'])
+
+        # Top Bar: Title and Controls
+        top_bar = tk.Frame(frame, bg=self.colors['card_bg'])
+        top_bar.pack(fill='x', padx=20, pady=15)
+
+        title = tk.Label(top_bar, text="General PDA Simulator (a^n b^n)", font=self.header_font, 
+                        bg=self.colors['card_bg'], fg=self.colors['text_fg'])
+        title.pack(side='left')
+
+        # Control Group (Regex + Input)
+        input_group = tk.Frame(top_bar, bg=self.colors['card_bg'])
+        input_group.pack(side='left', padx=20)
+
+        # Row 1: Regex
+        row1 = tk.Frame(input_group, bg=self.colors['card_bg'])
+        row1.pack(fill='x', pady=2)
+        tk.Label(row1, text="Regex:", width=8, anchor='e', bg=self.colors['card_bg'], fg=self.colors['text_fg']).pack(side='left')
+        self.pdalab_regex = tk.Entry(row1, font=self.code_font, width=25)
+        self.pdalab_regex.pack(side='left', padx=5)
+        self.pdalab_regex.bind('<KeyRelease>', self.validate_pdalab_regex)
+        
+        self.pdalab_error_label = tk.Label(row1, text="", font=('Segoe UI', 8), bg=self.colors['card_bg'], fg='#f44336')
+        self.pdalab_error_label.pack(side='left', padx=5)
+
+        # Row 2: String
+        row2 = tk.Frame(input_group, bg=self.colors['card_bg'])
+        row2.pack(fill='x', pady=2)
+        tk.Label(row2, text="String:", width=8, anchor='e', bg=self.colors['card_bg'], fg=self.colors['text_fg']).pack(side='left')
+        self.pdalab_input = tk.Entry(row2, font=self.code_font, width=25)
+        self.pdalab_input.pack(side='left', padx=5)
+        self.pdalab_input.insert(0, "aabb")
+
+        run_btn = self.create_rounded_button(top_bar, text="Run Simulation", command=self.run_pdalab, height=50)
+        run_btn.pack(side='left', padx=10)
+
+        # Content Split
+        content_split = tk.Frame(frame, bg=self.colors['bg_main'])
+        content_split.pack(fill='both', expand=True, padx=20, pady=(0, 20))
+
+        # Left Panel: Text Log
+        left_panel = tk.Frame(content_split, bg=self.colors['bg_main'])
+        left_panel.pack(side='left', fill='both', expand=True, padx=(0, 10))
+
+        tk.Label(left_panel, text="Execution Log", bg=self.colors['bg_main'], fg=self.colors['muted'], font=self.ui_font).pack(anchor='w', pady=(0,5))
+        self.pdalab_output = scrolledtext.ScrolledText(left_panel, font=('Consolas', 10), 
+                                                      bg='#1e1e1e', fg='#cccccc', insertbackground='white')
+        self.pdalab_output.pack(fill='both', expand=True)
+        
+        # Tags for highlighting
+        self.pdalab_output.tag_config('action', foreground='#4ec9b0') 
+        self.pdalab_output.tag_config('stack', foreground='#ce9178')
+        self.pdalab_output.tag_config('success', foreground='#6a9955')
+        self.pdalab_output.tag_config('fail', foreground='#f44747')
+        self.pdalab_output.tag_config('highlight', background='#264f78')
+
+
+        # Right Panel: Stack Visualization
+        right_panel = tk.Frame(content_split, bg=self.colors['panel_bg'], width=300)
+        right_panel.pack(side='right', fill='y', padx=(10, 0))
+        right_panel.pack_propagate(False)
+
+        self.pdalab_stack_label = tk.Label(right_panel, text="Stack Visualization", bg=self.colors['panel_bg'], fg=self.colors['text_fg'], font=self.header_font)
+        self.pdalab_stack_label.pack(pady=10)
+
+        # Canvas
+        # Canvas
+        self.pdalab_canvas = tk.Canvas(right_panel, bg='#1e1e1e', highlightthickness=0)
+        self.pdalab_canvas.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Bind resize event to redraw
+        self.pdalab_canvas.bind('<Configure>', lambda e: self.update_pdalab_viz())
+
+        # Playback Controls
+        ctrl_frame = tk.Frame(right_panel, bg=self.colors['panel_bg'])
+        ctrl_frame.pack(fill='x', pady=10, padx=10)
+        
+        self.btn_prev = self.create_rounded_button(ctrl_frame, text="< Prev", command=self.pdalab_prev, height=30)
+        self.btn_prev.grid(row=0, column=0, sticky='ew', padx=2)
+        
+        self.btn_reset = self.create_rounded_button(ctrl_frame, text="Reset", command=self.reset_pdalab_view, height=30)
+        self.btn_reset.grid(row=0, column=1, sticky='ew', padx=2)
+
+        self.btn_next = self.create_rounded_button(ctrl_frame, text="Next >", command=self.pdalab_next, height=30)
+        self.btn_next.grid(row=0, column=2, sticky='ew', padx=2)
+
+        ctrl_frame.grid_columnconfigure(0, weight=1)
+        ctrl_frame.grid_columnconfigure(1, weight=1)
+        ctrl_frame.grid_columnconfigure(2, weight=1)
+
+        self.pdalab_lbl_step = tk.Label(right_panel, text="Step: 0 / 0", bg=self.colors['panel_bg'], fg=self.colors['muted'])
+        self.pdalab_lbl_step.pack(pady=5)
+
+        # State Variables
+        self.pdalab_trace = [] # List of (action, stack_str)
+        self.pdalab_step_idx = 0
+
+        return frame
+
+    def run_pdalab(self):
+        input_str = self.pdalab_input.get().strip()
+        regex_str = self.pdalab_regex.get().strip()
+        
+        self.pdalab_output.delete('1.0', tk.END)
+        self.pdalab_output.insert(tk.END, f"Running PDA Lab...\n")
+        if regex_str:
+            self.pdalab_output.insert(tk.END, f"Regex:  {regex_str}\n")
+            self.pdalab_stack_label.config(text="Stack (Unused in Regex Mode)")
+        else:
+            self.pdalab_stack_label.config(text="Stack Visualization")
+            
+        self.pdalab_output.insert(tk.END, f"Input:  '{input_str}'\n\n")
+        
+        self.pdalab_trace = []
+        self.pdalab_step_idx = 0
+
+        try:
+            exe_path = "bin/pda_lab.exe"
+            if not os.path.exists(exe_path):
+                 exe_path = "pda_lab.exe" # local
+
+            # Pass both input and regex if regex is present
+            # Protocol: pda_lab.exe <input> [regex]
+            cmd = [exe_path, input_str]
+            if regex_str:
+                 cmd.append(regex_str)
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            
+            output_lines = result.stdout.splitlines()
+            for line in output_lines:
+                # Log to text area
+                if "ACCEPTED" in line:
+                    self.pdalab_output.insert(tk.END, line + "\n", 'success')
+                elif "REJECTED" in line:
+                    self.pdalab_output.insert(tk.END, line + "\n", 'fail')
+                elif "Action:" in line:
+                    # Parse: "Action: a | Transition to q_push, Stack: $AA"
+                    parts = line.split("|")
+                    if len(parts) >= 2:
+                        action_part = parts[0]
+                        desc_stack_part = "|".join(parts[1:]) 
+                        
+                        # Extract stack content
+                        # desc_stack_part might be " Transition to q_push, Stack: $AA"
+                        stack_part = desc_stack_part.split("Stack:")[-1].strip()
+                        
+                        # Extract State: " Transition to q_push,"
+                        state_part = "?"
+                        if "Transition to " in desc_stack_part:
+                            try:
+                                state_part = desc_stack_part.split("Transition to ")[1].split(",")[0].strip()
+                            except: pass
+                        
+                        # Calculate Input Index
+                        # If action is NOT 'EPS' (and NOT 'Step 0'), we consumed a char.
+                        # We need to know the PREVIOUS index.
+                        prev_idx = 0
+                        if self.pdalab_trace:
+                             # Last item is tuple idx 3
+                             # But wait, self.pdalab_trace[-1] might be different format if we changed it.
+                             # It is (line, stack, state, idx) now.
+                             if len(self.pdalab_trace[-1]) >= 4:
+                                 prev_idx = self.pdalab_trace[-1][3]
+                        
+                        new_idx = prev_idx
+                        # Clean action part "Action: a "
+                        act = action_part.replace("Action:", "").replace("|", "").strip()
+                        if act != "EPS" and act != "":
+                            new_idx += 1
+
+                        self.pdalab_trace.append( (action_part + "|" + desc_stack_part, stack_part, state_part, new_idx) )
+                        
+                        self.pdalab_output.insert(tk.END, action_part, 'action')
+                        self.pdalab_output.insert(tk.END, "|" + desc_stack_part + "\n", 'stack')
+                    else:
+                        self.pdalab_output.insert(tk.END, line + "\n")
+                elif "Step 0:" in line:
+                     # Parse start state. "Step 0: Start | Stack: $"
+                     # "Step 0: Start" -> State is "Start" or "q0" (implicit)
+                     stack_part = line.split("Stack:")[-1].strip()
+                     self.pdalab_trace.append( (line, stack_part, "Start", 0) ) # 0 is start index
+                     self.pdalab_output.insert(tk.END, line + "\n")
+                elif "DEBUG" in line:
+                     self.pdalab_output.insert(tk.END, line + "\n", 'fail') 
+                else:
+                    self.pdalab_output.insert(tk.END, line + "\n")
+            
+            if result.returncode != 0:
+                 self.pdalab_output.insert(tk.END, f"\nError: Process exited with code {result.returncode}\n")
             
         except Exception as e:
-            self.nfa_text.insert(tk.END, f"Error building NFA: {str(e)}\n\n")
-            self.nfa_text.insert(tk.END, "Check your regex syntax. Supported: ( ) * | . (implicit)\n")
-            self.nfa_text.see(tk.END)
+            self.pdalab_output.insert(tk.END, f"\nError running simulation: {e}\n", 'fail')
+            # DEBUG: Print traceback
             import traceback
             traceback.print_exc()
 
-        # 3. DFA Conversion (Subset Construction)
-        self.dfa_text.insert(tk.END, f"\nGenerating DFA for Regex: {regex}\n")
-        self.dfa_text.insert(tk.END, "-"*40 + "\n")
-        self.dfa_text.see(tk.END)
+        self.pdalab_output.see(tk.END)
+        self.pdalab_trace_len = len(self.pdalab_trace)
+        self.pdalab_step_idx = 0
+        if self.pdalab_trace_len > 0:
+            self.update_pdalab_viz()
+
+    def reset_pdalab_view(self):
+        self.pdalab_step_idx = 0
+        self.update_pdalab_viz()
+
+    def pdalab_next(self):
+        if self.pdalab_step_idx < len(self.pdalab_trace) - 1:
+            self.pdalab_step_idx += 1
+            self.update_pdalab_viz()
+            
+    def pdalab_prev(self):
+        if self.pdalab_step_idx > 0:
+            self.pdalab_step_idx -= 1
+            self.update_pdalab_viz()
+
+    def update_pdalab_viz(self):
+         if not self.pdalab_trace:
+             return
+         
+         # Force update to get correct dimensions
+         self.pdalab_canvas.update_idletasks()
+
+         # item format: (full_desc, stack_str, state_str, input_idx)
+         # Using try-except for backward compat is messy if we just changed it.
+         # But let's be safe.
+         
+         trace_item = self.pdalab_trace[self.pdalab_step_idx]
+         current_input_idx = 0
+         
+         if len(trace_item) == 4:
+             current_info, current_stack_str, current_state, current_input_idx = trace_item
+         elif len(trace_item) == 3:
+              current_info, current_stack_str, current_state = trace_item
+         else:
+             # Fallback
+             current_info = trace_item[0] if len(trace_item)>0 else ""
+             current_stack_str = ""
+             current_state = "?"
+
+         # Draw Stack (Only if NO Regex is present, per user request)
+         # "do not connect the Regex input field on the stack Visualization"
+         # This implies: If Regex is active, Stack Viz should be hidden/cleared.
+         regex_val = self.pdalab_regex.get().strip()
+         
+         if not regex_val:
+             # Default Mode: Show Stack
+             stack_list = list(current_stack_str)
+             self.draw_stack_on_canvas(self.pdalab_canvas, stack_list)
+         else:
+             # Regex Mode: Clear Stack area / Show nothing for stack
+             # We just don't draw the stack rectangles.
+             pass
+         
+         # Draw State
+         self.draw_state_on_canvas(self.pdalab_canvas, current_state)
+         
+         # Draw Input Tape
+         # We need the full input string. We can store it in self.pdalab_current_input_str
+         input_val = self.pdalab_input.get() # Get from UI directly or store it
+         self.draw_input_tape(self.pdalab_canvas, input_val, current_input_idx)
+         
+         # Update Label logic
+         self.pdalab_lbl_step.config(text=f"Step: {self.pdalab_step_idx} / {len(self.pdalab_trace)-1}")
+
+    def validate_pdalab_regex(self, event=None):
+        pattern = self.pdalab_regex.get().strip()
+        if not pattern:
+            self.pdalab_error_label.config(text="")
+            self.pdalab_regex.config(bg=self.colors['panel_bg'])
+            return
+
+        try:
+            binary_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bin', 'regex_engine.exe')
+            if not os.path.exists(binary_path):
+                 # Fallback to local if bin not found
+                 binary_path = 'regex_engine.exe'
+            if not os.path.exists(binary_path): return
+
+            cmd = [binary_path, 'VALIDATE', pattern]
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=script_dir)
+            output = result.stdout.strip()
+            
+            if output == "VALID":
+                self.pdalab_error_label.config(text="✓", fg='#4caf50')
+                self.pdalab_regex.config(bg=self.colors['panel_bg'])
+            elif output.startswith("ERROR|"):
+                self.pdalab_error_label.config(text="✗ Invalid", fg='#f44336')
+            else:
+                self.pdalab_error_label.config(text="✗", fg='#f44336')
+        except:
+            pass
+         
+         # Highlight line in text logic (optional, but nice)
+         # Requires keeping track of line indices. Simpler: Update label.
+
+    def draw_stack_on_canvas(self, canvas, stack_items):
+        canvas.delete('all')
+        w = canvas.winfo_width() or 300
+        h = canvas.winfo_height() or 400
+        item_h = 40
+        item_w = 80
+        center_x = w // 2
+        margin_bottom = 20
         
-        if nfa:
-            try:
-                dfa = lexical.nfa_to_dfa(nfa)
-                dfa_steps = dfa.get_steps()
-                
-                self.dfa_text.insert(tk.END, f"Start State: {dfa.start}\n")
-                self.dfa_text.insert(tk.END, f"Final States: {dfa.accept_states}\n\n")
-                
-                self.dfa_text.insert(tk.END, f"Transitions:\n")
-                for step in dfa_steps:
-                    self.dfa_text.insert(tk.END, f"State {step['from']} --({step['label']})--> State {step['to']}\n")
-                    
-                self.draw_dfa_diagram(dfa_steps, dfa.accept_states)
-            except Exception as e:
-                self.dfa_text.insert(tk.END, f"Error converting to DFA: {str(e)}\n")
-        else:
-             self.dfa_text.insert(tk.END, "Skipped DFA (NFA failed)\n")
+        # Draw base
+        canvas.create_line(center_x - item_w//2 - 10, h - margin_bottom, 
+                           center_x + item_w//2 + 10, h - margin_bottom, fill='#555', width=3)
+
+        for i, item in enumerate(stack_items):
+            # i=0 is bottom ($).
+            y_btm = h - margin_bottom - (i * item_h)
+            y_top = y_btm - item_h
+            x1 = center_x - item_w // 2
+            x2 = center_x + item_w // 2
+            
+            fill = '#2d2d2d'
+            if item == '$': fill = '#553333'
+            
+            canvas.create_rectangle(x1, y_top, x2, y_btm, fill=fill, outline='#007acc', width=2)
+            canvas.create_text(center_x, (y_top+y_btm)//2, text=item, fill='white', font=('Consolas', 12, 'bold'))
+        
+        # Label TOP
+        if stack_items:
+             y_top_label = h - margin_bottom - (len(stack_items) * item_h) - 10
+             canvas.create_text(center_x, y_top_label, text=f"TOP ({len(stack_items)})", fill='#007acc', font=('Segoe UI', 9))
+             
+    def draw_state_on_canvas(self, canvas, state_name):
+        # Draw State Name at the top
+        w = canvas.winfo_width() or 300
+        center_x = w // 2
+        y_pos = 40
+        
+        # Box for state
+        # State names can be long, auto-width?
+        text_w = len(state_name) * 10 
+        x1 = center_x - max(40, text_w//2)
+        x2 = center_x + max(40, text_w//2)
+        y1 = y_pos - 15
+        y2 = y_pos + 15
+        
+        canvas.create_rectangle(x1, y1, x2, y2, fill='#252526', outline='#4ec9b0', width=2)
+        canvas.create_text(center_x, y_pos, text=f"State: {state_name}", fill='#4ec9b0', font=('Segoe UI', 10, 'bold'))
+        
+        # Arrow pointing down to stack?
+        canvas.create_line(center_x, y2, center_x, y2+20, arrow='last', fill='#555')
+
+    def draw_input_tape(self, canvas, input_str, current_idx):
+        # Draw Tape at the bottom or top? Let's put it below the state, above stack?
+        # Or at the very top.
+        
+        w = canvas.winfo_width() or 300
+        center_x = w // 2
+        y_pos = 90 # Below state box (40 +/- 15)
+        
+        cell_size = 25
+        tape_w = len(input_str) * cell_size
+        start_x = center_x - tape_w // 2
+        
+        # Label
+        canvas.create_text(center_x, y_pos - 20, text="Input Tape", fill='#888', font=('Segoe UI', 8))
+
+        for i, char in enumerate(input_str):
+            x1 = start_x + i * cell_size
+            x2 = x1 + cell_size
+            y1 = y_pos
+            y2 = y1 + cell_size
+            
+            # Highlight current
+            bg = '#2d2d2d'
+            fg = 'white'
+            if i == current_idx:
+                bg = '#007acc'
+                fg = 'white'
+            elif i < current_idx:
+                bg = '#1e1e1e'
+                fg = '#555' # Processed
+            
+            canvas.create_rectangle(x1, y1, x2, y2, fill=bg, outline='#555')
+            canvas.create_text((x1+x2)//2, (y1+y2)//2, text=char, fill=fg, font=('Consolas', 10, 'bold'))
+            
+        # Arrow pointing to current
+        if current_idx < len(input_str):
+            curr_x = start_x + current_idx * cell_size + cell_size//2
+            canvas.create_line(curr_x, y_pos + cell_size + 5, curr_x, y_pos + cell_size, arrow='last', fill='#007acc')
 
 
 if __name__ == "__main__":
