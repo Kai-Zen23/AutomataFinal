@@ -60,12 +60,20 @@ public:
         if (regex_search(substr, match, rule.second)) {
           string val = match.str();
           if (rule.first != "WS") { // Skip whitespace
-            tokens.push_back({rule.first, val});
-            // Standardized Output for Visualizer
-            // The GUI is listening for "SCANNER: Found" to populate the token
-            // list.
-            cout << "SCANNER: Found " << rule.first << " '" << val << "'"
-                 << endl;
+            // Special Case: Split Identifiers into chars for PDA Visualization
+            // 'push 1 by 1'
+            if (rule.first == "INDENTIFIER" && val.length() > 1) {
+              for (char c : val) {
+                string s(1, c);
+                tokens.push_back({rule.first, s});
+                cout << "SCANNER: Found " << rule.first << " '" << s << "'"
+                     << endl;
+              }
+            } else {
+              tokens.push_back({rule.first, val});
+              cout << "SCANNER: Found " << rule.first << " '" << val << "'"
+                   << endl;
+            }
           }
           pos += val.length();
           matched = true;
@@ -310,8 +318,21 @@ NFA *regexToNFA(string regexStr) {
       stack.pop();
       NFA *n1 = stack.top();
       stack.pop();
-      n1->accept->addTransition("", n2->start);
+
+      // Optimization: Merge n1->accept with n2->start
+      // Redirect edges from n2->start to n1->accept
+      for (auto const &[sym, targets] : n2->start->transitions) {
+        for (State *t : targets) {
+          n1->accept->addTransition(sym, t);
+        }
+      }
+      // If n2->start was acting as a final state (rare in this constr.),
+      // propagate finality But typically we just use n2->accept as the new
+      // accept. n2->start is effectively removed from the graph flow.
+
       stack.push(new NFA(n1->start, n2->accept));
+      // Optionally delete n2->start if proper memory management were in place
+
     } else if (c == '|') { // Union
       if (stack.size() < 2)
         return nullptr;
@@ -319,13 +340,26 @@ NFA *regexToNFA(string regexStr) {
       stack.pop();
       NFA *n1 = stack.top();
       stack.pop();
+
       State *start = NFA::newState();
       State *end = NFA::newState();
-      start->addTransition("", n1->start);
-      start->addTransition("", n2->start);
+
+      // Optimization: Start state copies transitions of sub-NFAs instead of
+      // epsilon branching This avoids "start --eps--> n1.start" chain. Valid
+      // because n1.start/n2.start are fresh entry points from stack.
+      for (auto const &[sym, targets] : n1->start->transitions) {
+        for (State *t : targets)
+          start->addTransition(sym, t);
+      }
+      for (auto const &[sym, targets] : n2->start->transitions) {
+        for (State *t : targets)
+          start->addTransition(sym, t);
+      }
+
       n1->accept->addTransition("", end);
       n2->accept->addTransition("", end);
       stack.push(new NFA(start, end));
+
     } else if (c == '*') { // Kleene Star
       if (stack.empty())
         return nullptr;
@@ -338,26 +372,24 @@ NFA *regexToNFA(string regexStr) {
       n1->accept->addTransition("", n1->start);
       n1->accept->addTransition("", end);
       stack.push(new NFA(start, end));
-    } else if (c == '+') { // One or More (IMPLEMENTED now to handle typical
-                           // inputs gracefully)
+
+    } else if (c == '+') { // One or More
       if (stack.empty())
         return nullptr;
       NFA *n1 = stack.top();
       stack.pop();
-      State *start = NFA::newState();
-      State *end = NFA::newState();
-      start->addTransition("", n1->start);
+      // Optimization: A+ is just A with a loop back from accept to start
+      // No new states needed.
       n1->accept->addTransition("", n1->start);
-      n1->accept->addTransition("", end);
-      stack.push(new NFA(start, end));
+      stack.push(new NFA(n1->start, n1->accept));
     }
   }
 
   if (!stack.empty()) {
     NFA *res = stack.top();
     res->accept->isFinal = true;
-    res->renumberStates(); // <--- NEW CALL
-    res->indexStates();    // Populate internal list of all states
+    res->renumberStates();
+    res->indexStates();
     return res;
   }
   return nullptr;
@@ -558,90 +590,90 @@ public:
     for (size_t i = 0; i < tokens.size(); ++i) {
       const auto &t = tokens[i];
 
-      if (t.type == "NUMBER" || t.type == "LITERAL") {
-        log("SHIFT", "Read operand " + t.value);
-      } else if (t.type == "INDENTIFIER") {
-        // Check for function call: id followed by '('
-        if (i + 1 < tokens.size() && tokens[i + 1].type == "LPAREN") {
-          log("SHIFT", "Read function " + t.value);
-          // The '(' will be handled in next iteration
-        } else {
-          log("SHIFT", "Read variable " + t.value);
-        }
+      if (t.type == "NUMBER" || t.type == "LITERAL" ||
+          t.type == "INDENTIFIER") {
+        // Regex Literal / Identifier: Push to stack (Implicit Concat)
+        stack.push_back(t.value);
+        log("SHIFT", "Read " + t.value);
+
       } else if (t.type == "LPAREN") {
         stack.push_back("(");
-        log("PUSH", "Push '('");
-      } else if (t.type == "RPAREN") {
-        while (!stack.empty() && stack.back() != "(") {
-          string op = stack.back();
-          stack.pop_back();
-          log("POP/REDUCE", "Apply T -> T " + op + " F");
-        }
-        if (!stack.empty()) {
-          stack.pop_back(); // Pop '('
+        log("PUSH", "Group Start '('");
 
-          // Check if this was a function call arg list ending
-          // Note: In a real PDA we'd track "Func" on stack.
-          // Here we just log the match.
-          log("POP", "Match ')'");
-        } else {
-          log("REJECT", "Unmatched ')' - Stack empty");
+      } else if (t.type == "RPAREN") {
+        // Reduce internal group
+        bool found = false;
+        // Pop until matching '('
+        // For visualization: we just pop everything and say "Reduced Group"
+        // In a real Regex PDA, we'd form a Sub-NFA. Here we just visualize
+        // structure.
+        while (!stack.empty()) {
+          string top = stack.back();
+          stack.pop_back();
+          if (top == "(") {
+            found = true;
+            log("REDUCE", "Rule: F -> ( E )");
+            break;
+          }
+          log("POP", "Consuming " + top);
+        }
+        if (!found) {
+          log("REJECT", "Unmatched ')'");
           return;
         }
+
+      } else if (t.type == "MULTIPLY" || t.type == "PLUS") {
+        // Kleene Star or Plus (Postfix)
+        // Acts on the element on top of stack
+        if (stack.empty() || stack.back() == "(" || stack.back() == "|") {
+          log("REJECT", "Operator " + t.value + " needs operand");
+          return;
+        }
+        string top = stack.back();
+        stack.pop_back();
+        log("REDUCE", "Rule: F -> " + top + t.value);
+        // Push back abstract result? Or just keep going?
+        // For "Push 1 by 1", we want the result on stack?
+        // stack.push_back(top + t.value);
+        // Let's push back a marker
+        stack.push_back(top + t.value);
+
+      } else if (t.type == "ALTERNATION") {
+        // Union Operator '|'
+        // Low precedence. Should reduce existing concats?
+        // For strict visualization, just push it.
+        stack.push_back("|");
+        log("SHIFT", "Union Operator '|'");
+
       } else if (t.type == "COMMA") {
-        // Argument separator
-        while (!stack.empty() && stack.back() != "(") {
-          string op = stack.back();
-          stack.pop_back();
-          log("POP/REDUCE", "Apply T -> T " + op + " F");
-        }
-        log("SKIP", "Next Argument");
-      } else if (t.type == "PLUS" || t.type == "MINUS" ||
-                 t.type == "MULTIPLY" || t.type == "DIVIDE") {
-        string opVal = t.value;
-        while (!stack.empty() && stack.back() != "(" &&
-               precedence(stack.back()) >= precedence(opVal)) {
-          string p = stack.back();
-          stack.pop_back();
-          log("POP/REDUCE", "Apply T -> T " + p + " F");
-        }
-        stack.push_back(opVal);
-        log("PUSH", "Push operator " + opVal);
+        // Skip commas
+        log("SKIP", "Comma");
       }
     }
 
     while (!stack.empty()) {
+      // Just clear stack
       string op = stack.back();
       stack.pop_back();
+      // If we see '(', it's unmatched
       if (op == "(") {
-        log("REJECT", "Unmatched '(' at end of input");
+        log("REJECT", "Unmatched '('");
         return;
       }
-      log("POP/REDUCE", "Apply E -> E " + op + " T");
+      // Provide generic reduction log for visualization
+      log("REDUCE", "Rule: S -> S . " + op);
     }
     log("ACCEPT", "Input Accepted");
   }
-  /**
-   * Outputs the static structure of the PDA (State Machine View) for
-   * visualization. Since this is a Shift-Reduce parser, we visualize the
-   * abstract states.
-   */
+
   void printPDAStructure() {
-    cout << "PDA_FINAL: Operand" << endl;
-    // Edges format: PDA_EDGE: From --(Label)--> To
-    cout << "PDA_EDGE: Start --(number/variable)--> Operand" << endl;
-    cout << "PDA_EDGE: Start --(Push '(')--> Start" << endl;
-    cout << "PDA_EDGE: Start --(func_name)--> Function" << endl;
-
-    cout << "PDA_EDGE: Function --(Push '(')--> Start" << endl;
-
-    cout << "PDA_EDGE: Operand --(operator)--> Operator" << endl;
-    cout << "PDA_EDGE: Operand --(Pop ')')--> Operand" << endl;
-    cout << "PDA_EDGE: Operand --(Comma)--> Start" << endl;
-
-    cout << "PDA_EDGE: Operator --(number/variable)--> Operand" << endl;
-    cout << "PDA_EDGE: Operator --(Push '(')--> Start" << endl;
-    cout << "PDA_EDGE: Operator --(func_name)--> Function" << endl;
+    cout << "PDA_FINAL: State" << endl;
+    cout << "PDA_EDGE: Start --(char)--> State" << endl;
+    cout << "PDA_EDGE: Start --( '(' )--> Start" << endl;
+    cout << "PDA_EDGE: State --(char)--> State" << endl;
+    cout << "PDA_EDGE: State --('*')--> State" << endl;
+    cout << "PDA_EDGE: State --('|')--> Start" << endl;
+    cout << "PDA_EDGE: State --( ')' )--> State" << endl;
   }
 };
 
@@ -669,15 +701,49 @@ int main(int argc, char *argv[]) {
   if (argc < 2)
     return 1;
 
-  string input = argv[1];
-  string pattern = (argc > 2) ? argv[2] : "(a|b)*"; // Default or passed arg
+  // 1. Generate Automata from Pattern (Standard Mode)
+  // ... (Removed valid check to support conditional logic below)
 
-  // 1. Generate Automata from Pattern
+  if (argc >= 4 && string(argv[1]) == "TEST_MODE") {
+    string pattern = argv[2];
+    NFA *nfa = regexToNFA(pattern);
+    if (!nfa) {
+      cout << "ERROR: Invalid Regex" << endl;
+      return 1;
+    }
+    // Run simulations
+    for (int i = 3; i < argc; i++) {
+      string testStr = argv[i];
+
+      // Simulation
+      set<State *> current = epsilonClosure({nfa->start});
+      for (char c : testStr) {
+        string sym(1, c);
+        set<State *> next = move(current, sym);
+        current = epsilonClosure(next);
+      }
+
+      bool accepted = false;
+      for (State *s : current) {
+        if (s->isFinal) {
+          accepted = true;
+          break;
+        }
+      }
+
+      cout << "RESULT: " << testStr << " -> "
+           << (accepted ? "Accepted" : "Rejected") << endl;
+    }
+    return 0;
+  }
+
+  string input = argv[1];
+  string pattern = (argc > 2) ? argv[2] : "(a|b)*";
+
   cout << "=== AUTOMATA GEN START ===" << endl;
   NFA *nfa = regexToNFA(pattern);
   if (nfa) {
     nfa->printEdges();
-    // Generate DFA using real Subset Construction
     generateDFA(nfa);
   }
 
